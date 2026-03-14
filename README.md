@@ -8,10 +8,10 @@ Kuma guards your yield. A USDC vault that combines a lending floor with Drift pe
 
 Kuma splits vault capital between two yield sources:
 
-1. **Lending Floor (20%)** — Idle USDC earns base yield via Drift Earn (spot lending)
-2. **Basis Trade Alpha (80%)** — Short perpetual positions on Drift collect positive funding rates
+1. **Lending Floor (30%)** — Idle USDC earns base yield via Drift Earn (spot lending)
+2. **Basis Trade Alpha (70%)** — Short perpetual positions on Drift collect positive funding rates
 
-The keeper bot scans all 70+ Drift perp markets hourly, ranks them by annualized funding rate, and allocates capital to the top opportunities. When funding turns negative, positions are closed automatically.
+The keeper bot scans Drift perp markets every 15 minutes, ranks them by cost-adjusted yield, and allocates capital to the top opportunities with dynamic leverage scaling. Health ratio is monitored every 30 seconds.
 
 ### How It Works
 
@@ -64,8 +64,11 @@ Key advantages:
 | Module | File | Purpose |
 |--------|------|---------|
 | Funding Scanner | `src/keeper/funding-scanner.ts` | Fetches and ranks all Drift perp markets by funding rate |
+| Cost Calculator | `src/keeper/cost-calculator.ts` | Evaluates trade economics — filters markets where fees exceed funding |
+| Leverage Controller | `src/keeper/leverage-controller.ts` | Dynamic leverage scaling based on realized volatility regime |
+| Health Monitor | `src/keeper/health-monitor.ts` | 30-second health ratio and drawdown checks |
 | Position Manager | `src/keeper/position-manager.ts` | Computes target allocations, opens/closes positions |
-| Keeper Loop | `src/keeper/index.ts` | Main event loop — scan, rebalance, monitor |
+| Keeper Loop | `src/keeper/index.ts` | Main event loop — emergency checks, scan, rebalance |
 | Vault Setup | `src/scripts/` | Admin scripts to initialize Voltr vault + Drift adaptor |
 | Config | `src/config/` | Strategy parameters, program IDs, vault settings |
 
@@ -73,15 +76,18 @@ Key advantages:
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| Max drawdown | 5% | Reduces all positions if breached |
-| Max leverage | 5x | Conservative — never exceeds 5x |
-| Target leverage | 3x | Default operating leverage |
-| Max per market | 30% | No single market concentration |
-| Max simultaneous markets | 5 | Diversification across funding sources |
-| Min funding to enter | 5% APY | Only trade markets with meaningful yield |
-| Exit threshold | -1% funding | Close position when funding turns negative |
-| Rebalance interval | 4 hours | Periodic position adjustment |
-| Funding scan interval | 1 hour | Rate monitoring frequency |
+| Max drawdown | 3% / 5% severe | Reduces positions at 3%, closes all at 5% |
+| Max leverage | 2x hard cap | Dynamic: 2x in low vol → 0x in extreme vol |
+| Leverage by regime | 2x/1.5x/1x/0.5x/0x | Scales inversely with realized volatility |
+| Max per market | 40% | Concentrated in high-quality markets only |
+| Max simultaneous markets | 3 | Top 3 only — avoids illiquid altcoins |
+| Min funding to enter | 5% APY + cost gate | Must exceed round-trip fees over 24h hold |
+| Exit threshold | -0.5% funding | Tighter exit — early response to reversals |
+| Health ratio warning | 1.15 | Start reducing positions |
+| Health ratio critical | 1.08 | Emergency close all |
+| Health check interval | 30 seconds | Near real-time monitoring |
+| Rebalance interval | 1 hour | Faster reaction (was 4h) |
+| Funding scan interval | 15 minutes | Frequent rate monitoring (was 1h) |
 
 ### What Can Go Wrong
 
