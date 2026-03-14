@@ -36,7 +36,7 @@ async function main() {
 
   // 2. Test Drift client connection on devnet
   console.log("\n=== Drift Client (Devnet) ===");
-  // Use public RPC for devnet (Helius free plan doesn't support batch requests)
+  // Use public RPC for devnet (free plans may not support batch requests)
   const connection = new Connection("https://api.devnet.solana.com", "confirmed");
   const manager = loadKeypair("MANAGER_KEYPAIR_PATH");
 

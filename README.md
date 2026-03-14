@@ -202,7 +202,7 @@ npm run keeper:dev
 - **On-chain**: [Voltr Vault](https://docs.ranger.finance) + [Drift Protocol v2](https://docs.drift.trade)
 - **Off-chain**: TypeScript keeper bot with dynamic risk controls
 - **Data**: [Drift Data API](https://data.api.drift.trade) for funding rates and OHLC candles
-- **RPC**: Helius
+- **RPC**: QuickNode (or any Solana RPC provider)
 
 ## Hackathon
 

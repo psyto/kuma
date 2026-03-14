@@ -150,7 +150,7 @@ Monitored every **30 seconds** — 240x more frequent than the hourly rebalance.
 - **Keeper**: TypeScript bot with 30-second tick loop
 - **Vol computation**: Parkinson estimator on SOL-PERP hourly candles
 - **Data feed**: Drift Data API — funding rates, OHLC candles
-- **RPC**: Helius
+- **RPC**: QuickNode
 
 ### Keeper Loop Architecture
 
