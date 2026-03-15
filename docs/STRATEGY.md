@@ -151,12 +151,33 @@ Monitored every **30 seconds** — 240x more frequent than the hourly rebalance.
 
 | Market Condition | Vol Regime | Leverage | Direction | Expected APY | Revenue Sources |
 |-----------------|-----------|----------|-----------|-------------|----------------|
-| Bull (longs dominant) | Low | 1.5x | SHORT | 20-30% | Funding + premium convergence + OI + lending |
-| Neutral | Normal | 1.0x | Signal-based | 12-18% | Funding + lending |
-| Bear (shorts dominant) | High | 0.5x | LONG | 8-12% | Funding + discount convergence + lending |
-| Crisis (extreme vol) | Extreme | 0x | None | 1-3% | Lending only |
+| Bull (longs dominant) | Low | 1.5x | SHORT | 20-30% | Funding + premium + OI + LST + lending |
+| Neutral | Normal | 1.0x | Signal-based | 12-18% | Funding + LST + lending |
+| Bear (shorts dominant) | High | 0.5x | LONG | 8-15% | Funding + discount + LST + lending |
+| Crisis (extreme vol) | Extreme | 0x | None | 4-7% | Optimized lending (Kamino 6.5%) |
 
-**Kuma v3 earns in all market conditions.** In bull markets, the composite signal triggers SHORT positions that collect funding and earn premium convergence. In bear markets, the signal flips to LONG — collecting negative funding from shorts. The lending floor (30%) provides base yield even when all signals are neutral.
+**Kuma v4 stacks 4+ yield sources.** In bull markets: funding + premium convergence + LST staking + lending floor. In bear markets: funding (long side) + discount convergence + LST + lending. In extreme vol: optimized lending at 6.5% (Kamino) instead of 1.5% (Drift Earn). Capital is never earning zero.
+
+### Yield Stack (v4 — Production)
+
+| Source | Where | Est. APY Contribution |
+|--------|-------|----------------------|
+| Funding harvesting | Drift perps (bidirectional) | 6-10% |
+| Premium convergence | Mark/oracle mean reversion | 2-4% |
+| Lending floor | Kamino/Marginfi/Drift (best rate) | 1.5-2% |
+| LST collateral | jitoSOL staking + MEV | 1.5-2% |
+| Maker rebates | All orders postOnly | 0.06% |
+| **Total** | | **12-18% (hostile) / 20-30% (normal)** |
+
+### Competitive Positioning
+
+| Competitor | Strategy | APY | Kuma v4 Advantage |
+|---|---|---|---|
+| Gauntlet hJLP | JLP + hedge | 10-30% | More Drift-native signals (3 vs 1) |
+| Gauntlet Basis | dSOL + short | 10-20% | Bidirectional + multi-signal |
+| Circuit Trade | Market making | ~30% | Different approach — complementary |
+| Solstice | Delta-neutral | 21.5% | Open source + LST + lending optimization |
+| Ranger Earn best | Various | 11.25% | **2-3x higher expected APY** |
 
 ### Backtest Limitation
 
