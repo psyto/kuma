@@ -32,6 +32,16 @@ export const STRATEGY_CONFIG = {
   minAnnualizedFundingBps: 500, // 5% minimum
   exitFundingBps: -50, // -0.5% exit
 
+  // === LST STAKING YIELD (v4 — production) ===
+  // Convert portion of basis capital to jitoSOL → use as collateral → earn ~7-8% staking yield
+  // on top of funding + premium revenue. Requires SOL swap + LST + hedge cycle.
+  enableLstYield: true,
+
+  // === MULTI-PROTOCOL LENDING (v4 — production) ===
+  // Route idle capital to highest-yield lending protocol instead of fixed Drift Earn.
+  // Kamino (~6.5%), Marginfi (~5%), Drift Earn (~1.5%)
+  enableLendingOptimization: true,
+
   // === AMM IMBALANCE SIGNALS (v3 — Drift-native) ===
   // Three revenue sources beyond simple funding:
   // 1. OI imbalance → positions ahead of funding changes
