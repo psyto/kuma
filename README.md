@@ -152,6 +152,17 @@ A position is only opened if `net_profit > 0` over the minimum 24-hour holding p
 | Withdrawal fee | 0.1% |
 | Withdrawal period | 24 hours |
 
+## Demo & Dashboard
+
+- **Pitch video**: `demo/kuma-demo.mp4` — 66-second presentation covering strategy, architecture, risk controls, and backtest results
+- **Live dashboard**: Open `demo/dashboard.html` in any browser — fetches real Drift funding rates and displays regime, cost gate status, and keeper log. No server required.
+- **Voiceover script**: See `demo/` directory
+
+```bash
+# Preview the dashboard
+open demo/dashboard.html
+```
+
 ## Setup
 
 ### Prerequisites
@@ -192,7 +203,10 @@ npm run keeper
 # Build TypeScript
 npm run build
 
-# Run devnet tests
+# Run unit tests (24 tests)
+npm test
+
+# Run devnet integration test
 npm run test:devnet
 
 # Watch mode for keeper development

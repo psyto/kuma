@@ -6,84 +6,33 @@
 <title>Kuma Vault — Pitch</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    width: 1920px; height: 1080px; overflow: hidden;
-    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-    background: #0a0a0f; color: #e0e0e0;
-  }
-  .slide {
-    position: absolute; top: 0; left: 0;
-    width: 1920px; height: 1080px;
-    display: flex; flex-direction: column;
-    justify-content: center; align-items: center;
-    opacity: 0; transition: opacity 0.8s ease;
-    padding: 80px;
-  }
+  body { width: 1920px; height: 1080px; overflow: hidden; font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; background: #0a0a0f; color: #e0e0e0; }
+  .slide { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; display: flex; flex-direction: column; justify-content: center; align-items: center; opacity: 0; transition: opacity 0.8s ease; padding: 80px; }
   .slide.active { opacity: 1; }
   h1 { font-size: 72px; margin-bottom: 20px; }
   h2 { font-size: 48px; margin-bottom: 30px; color: #8b9dc3; }
   h3 { font-size: 36px; margin-bottom: 20px; color: #6b7b9c; }
   p { font-size: 28px; line-height: 1.6; max-width: 1400px; text-align: center; }
-  .accent { color: #f0b040; }
-  .green { color: #40c057; }
-  .red { color: #e03131; }
-  .dim { color: #666; }
+  .accent { color: #f0b040; } .green { color: #40c057; } .red { color: #e03131; } .dim { color: #666; }
   .emoji { font-size: 120px; margin-bottom: 30px; }
-
-  /* Title slide */
   .title-slide h1 { font-size: 96px; }
   .title-slide .subtitle { font-size: 32px; color: #8b9dc3; margin-top: 10px; }
   .title-slide .tagline { font-size: 40px; color: #f0b040; margin-top: 30px; }
-
-  /* Architecture diagram */
-  .arch-box {
-    border: 2px solid #333; border-radius: 12px; padding: 24px 40px;
-    margin: 10px 0; width: 900px; text-align: left; font-size: 24px;
-    background: #111118;
-  }
+  .arch-box { border: 2px solid #333; border-radius: 12px; padding: 24px 40px; margin: 10px 0; width: 900px; text-align: left; font-size: 24px; background: #111118; }
   .arch-box.highlight { border-color: #f0b040; background: #1a1810; }
   .arch-label { color: #f0b040; font-size: 20px; margin-bottom: 8px; }
-
-  /* Terminal output */
-  .terminal {
-    background: #111118; border: 1px solid #333; border-radius: 12px;
-    padding: 30px 40px; width: 1400px; text-align: left;
-    font-size: 22px; line-height: 1.7;
-  }
-  .terminal .prompt { color: #40c057; }
-  .terminal .output { color: #ccc; }
-  .terminal .highlight { color: #f0b040; }
+  .terminal { background: #111118; border: 1px solid #333; border-radius: 12px; padding: 30px 40px; width: 1400px; text-align: left; font-size: 22px; line-height: 1.7; }
   .terminal .header { color: #8b9dc3; font-weight: bold; }
-
-  /* Stats grid */
-  .stats-grid {
-    display: grid; grid-template-columns: repeat(3, 1fr);
-    gap: 30px; width: 1400px;
-  }
-  .stat-card {
-    background: #111118; border: 1px solid #333; border-radius: 12px;
-    padding: 30px; text-align: center;
-  }
+  .terminal .highlight { color: #f0b040; }
+  .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; width: 1400px; }
+  .stat-card { background: #111118; border: 1px solid #333; border-radius: 12px; padding: 30px; text-align: center; }
   .stat-value { font-size: 48px; color: #f0b040; margin: 10px 0; }
   .stat-label { font-size: 20px; color: #888; }
-
-  /* Table */
   table { width: 1200px; border-collapse: collapse; font-size: 24px; }
   th { color: #f0b040; padding: 12px 20px; text-align: left; border-bottom: 2px solid #333; }
   td { padding: 12px 20px; border-bottom: 1px solid #222; }
-  tr:hover { background: #111118; }
-
-  /* Progress bar */
-  .progress {
-    position: fixed; bottom: 0; left: 0; height: 4px;
-    background: #f0b040; transition: width 0.5s ease; z-index: 100;
-  }
-  .slide-number {
-    position: fixed; bottom: 20px; right: 40px;
-    font-size: 18px; color: #444; z-index: 100;
-  }
-
-  /* Fade-in items */
+  .progress { position: fixed; bottom: 0; left: 0; height: 4px; background: #f0b040; transition: width 0.5s ease; z-index: 100; }
+  .slide-number { position: fixed; bottom: 20px; right: 40px; font-size: 18px; color: #444; z-index: 100; }
   .fade-item { opacity: 0; transform: translateY(20px); transition: all 0.5s ease; }
   .fade-item.visible { opacity: 1; transform: translateY(0); }
 </style>
@@ -126,7 +75,7 @@
       <span class="green">Dynamic leverage</span> — 2x in calm markets → 0x in extreme vol. Scales inversely with risk.
     </div>
     <div class="fade-item" style="font-size: 28px; margin: 20px 0; padding: 20px; border-left: 4px solid #40c057;">
-      <span class="green">Cost gate</span> — Only enters markets where expected funding exceeds round-trip trading costs.
+      <span class="green">Cost gate</span> — Only enters markets where expected funding exceeds round-trip trading costs (0.17%).
     </div>
     <div class="fade-item" style="font-size: 28px; margin: 20px 0; padding: 20px; border-left: 4px solid #40c057;">
       <span class="green">30-second health monitoring</span> — Catches margin deterioration 240x faster than hourly checks.
@@ -141,21 +90,18 @@
 <div class="slide" id="slide-4">
   <h2>Architecture</h2>
   <div style="margin-top: 30px;">
-    <div class="arch-box fade-item">
-      <div class="arch-label">ON-CHAIN</div>
-      Voltr Vault — Deposits, withdrawals, LP shares, fee collection
-    </div>
-    <div class="arch-box fade-item">
-      <div class="arch-label">ON-CHAIN</div>
-      Drift Adaptor — Bridges vault ↔ Drift Protocol v2
-    </div>
+    <div class="arch-box fade-item"><div class="arch-label">ON-CHAIN</div>Voltr Vault — Deposits, withdrawals, LP shares, fee collection</div>
+    <div class="arch-box fade-item"><div class="arch-label">ON-CHAIN</div>Drift Adaptor — Bridges vault ↔ Drift Protocol v2</div>
     <div class="arch-box highlight fade-item">
       <div class="arch-label">OFF-CHAIN — THE ALPHA</div>
       Kuma Keeper Bot<br>
       <span class="dim">├── Emergency Monitor (30s) — Health ratio + drawdown</span><br>
-      <span class="dim">├── Leverage Controller (15min) — Vol regime → leverage</span><br>
+      <span class="dim">├── Leverage Controller (15min) — Parkinson vol → regime → leverage</span><br>
       <span class="dim">├── Funding Scanner (15min) — Rank markets + cost gate</span><br>
-      <span class="dim">└── Rebalancer (1hr) — Open/close basis positions</span>
+      <span class="dim">└── Rebalancer (1hr) — Open/close top 3 basis positions</span>
+    </div>
+    <div class="fade-item" style="margin-top: 20px; font-size: 20px; color: #888;">
+      Live monitoring dashboard + 24 unit tests passing
     </div>
   </div>
 </div>
@@ -165,20 +111,17 @@
   <h2>Live Devnet Test</h2>
   <div class="terminal fade-item">
     <div class="header">🐻 Kuma Devnet Trading Test</div><br>
-    <div class="output">
-      <span class="header">=== Funding Scanner + Cost Gate ===</span><br>
-      Markets with positive funding: <span class="highlight">24</span><br>
-      &nbsp;&nbsp;1. CLOUD-PERP: <span class="highlight">23,941%</span> APY | cost gate: <span class="green">PASS</span><br>
-      &nbsp;&nbsp;2. MET-PERP: <span class="highlight">11,269%</span> APY | cost gate: <span class="green">PASS</span><br>
-      &nbsp;&nbsp;3. KMNO-PERP: <span class="highlight">8,770%</span> APY | cost gate: <span class="green">PASS</span><br><br>
-      <span class="header">=== Dynamic Leverage Controller ===</span><br>
-      SOL realized vol: <span class="highlight">70.2%</span><br>
-      Vol regime: <span class="red">high</span><br>
-      Target leverage: <span class="highlight">0.5x</span> (correctly scaling down)<br><br>
-      <span class="header">=== Trade Test ===</span><br>
-      Equity: <span class="highlight">$5,000.00</span><br>
-      Trade executed: <span class="green">hhKfXLdkcdqZ...tX2k2vX</span>
-    </div>
+    <span class="header">=== Funding Scanner + Cost Gate ===</span><br>
+    Markets with positive funding: <span class="highlight">24</span><br>
+    &nbsp;&nbsp;1. CLOUD-PERP: <span class="highlight">23,941%</span> APY | cost gate: <span class="green">PASS</span><br>
+    &nbsp;&nbsp;2. MET-PERP: <span class="highlight">11,269%</span> APY | cost gate: <span class="green">PASS</span><br>
+    &nbsp;&nbsp;3. KMNO-PERP: <span class="highlight">8,770%</span> APY | cost gate: <span class="green">PASS</span><br><br>
+    <span class="header">=== Dynamic Leverage Controller ===</span><br>
+    SOL realized vol: <span class="highlight">70.2%</span><br>
+    Vol regime: <span class="red">high</span> → Target leverage: <span class="highlight">0.5x</span> (correctly scaling down)<br><br>
+    <span class="header">=== Trade Execution ===</span><br>
+    Equity: <span class="highlight">$5,000.00</span> | SOL price: $88.21<br>
+    Trade executed: <span class="green">hhKfXLdkcdqZ...tX2k2vX ✓</span>
   </div>
 </div>
 
@@ -186,36 +129,12 @@
 <div class="slide" id="slide-6">
   <h2>Risk Management</h2>
   <div class="stats-grid fade-item">
-    <div class="stat-card">
-      <div class="stat-label">MAX LEVERAGE</div>
-      <div class="stat-value">2x</div>
-      <div class="stat-label">Dynamic by vol regime</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">HEALTH CHECK</div>
-      <div class="stat-value">30s</div>
-      <div class="stat-label">Near real-time monitoring</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">MAX DRAWDOWN</div>
-      <div class="stat-value">3%</div>
-      <div class="stat-label">Reduce / 5% close all</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">LENDING FLOOR</div>
-      <div class="stat-value">30%</div>
-      <div class="stat-label">Bear market buffer</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">COST GATE</div>
-      <div class="stat-value">0.17%</div>
-      <div class="stat-label">Min round-trip threshold</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">MAX MARKETS</div>
-      <div class="stat-value">3</div>
-      <div class="stat-label">Top cost-viable only</div>
-    </div>
+    <div class="stat-card"><div class="stat-label">MAX LEVERAGE</div><div class="stat-value">2x</div><div class="stat-label">Dynamic by vol regime</div></div>
+    <div class="stat-card"><div class="stat-label">HEALTH CHECK</div><div class="stat-value">30s</div><div class="stat-label">Near real-time</div></div>
+    <div class="stat-card"><div class="stat-label">MAX DRAWDOWN</div><div class="stat-value">3%</div><div class="stat-label">Reduce / 5% close all</div></div>
+    <div class="stat-card"><div class="stat-label">LENDING FLOOR</div><div class="stat-value">30%</div><div class="stat-label">Bear market buffer</div></div>
+    <div class="stat-card"><div class="stat-label">COST GATE</div><div class="stat-value">0.17%</div><div class="stat-label">Min round-trip threshold</div></div>
+    <div class="stat-card"><div class="stat-label">UNIT TESTS</div><div class="stat-value">24</div><div class="stat-label">All passing</div></div>
   </div>
 </div>
 
@@ -225,73 +144,43 @@
   <h3>32 days (Feb 12 – Mar 15, 2026) — Hostile market conditions</h3>
   <table class="fade-item" style="margin-top: 30px;">
     <tr><th>Metric</th><th>Result</th><th>Takeaway</th></tr>
-    <tr><td>Total Return</td><td class="red">-1.02%</td><td>Trading costs > funding earned</td></tr>
-    <tr><td>Max Drawdown</td><td class="green">1.02%</td><td>Well within 3% limit</td></tr>
-    <tr><td>Trading Days</td><td>31/32 (97%)</td><td>Active market selection</td></tr>
-    <tr><td>Best Market</td><td>1MBONK-PERP</td><td>100% positive funding</td></tr>
-    <tr><td>SOL-PERP</td><td class="red">Avoided</td><td>Negative funding → correctly blocked</td></tr>
+    <tr><td>Total Return</td><td class="red">-1.02%</td><td>Trading costs ($2,014) &gt; funding earned ($913)</td></tr>
+    <tr><td>Max Drawdown</td><td class="green">1.02%</td><td>Well within 3% limit — capital preserved</td></tr>
+    <tr><td>Trading Days</td><td>31/32 (97%)</td><td>Active market selection working</td></tr>
+    <tr><td>Best Market</td><td class="accent">1MBONK-PERP</td><td>100% positive funding, top Sharpe</td></tr>
+    <tr><td>SOL-PERP</td><td class="red">Correctly avoided</td><td>Negative funding throughout period</td></tr>
   </table>
   <p style="margin-top: 30px; color: #8b9dc3;">
     The last month was the worst-case scenario for basis trading.<br>
-    <span class="accent">Capital was preserved. Risk controls worked.</span>
+    <span class="accent">Capital was preserved. Risk controls worked. We show real numbers, not fake ones.</span>
   </p>
 </div>
 
-<!-- Slide 8: Call to Action -->
+<!-- Slide 8: CTA -->
 <div class="slide title-slide" id="slide-8">
   <div class="emoji">🐻</div>
   <h1>Kuma Vault</h1>
   <div style="margin-top: 30px;">
-    <table style="width: 800px; margin: 0 auto;">
+    <table style="width: 900px; margin: 0 auto;">
       <tr><td class="dim">Target APY</td><td class="accent">10-20% (normal markets)</td></tr>
       <tr><td class="dim">Base Asset</td><td>USDC</td></tr>
       <tr><td class="dim">Lock Period</td><td>3-month rolling</td></tr>
       <tr><td class="dim">Edge</td><td>Dynamic leverage + cost gates + 30s health monitoring</td></tr>
+      <tr><td class="dim">Tests</td><td>24 unit tests + devnet trading validated</td></tr>
+      <tr><td class="dim">Dashboard</td><td>Live monitoring with real Drift data</td></tr>
     </table>
   </div>
-  <p style="margin-top: 40px;">
-    <span class="accent">github.com/psyto/kuma</span>
-  </p>
+  <p style="margin-top: 40px;"><span class="accent">github.com/psyto/kuma</span></p>
   <p style="margin-top: 10px; color: #666;">Main Track + Drift Side Track</p>
 </div>
 
 <div class="progress" id="progress"></div>
 <div class="slide-number" id="slide-number"></div>
-
 <script>
-const TOTAL_SLIDES = 8;
-const SLIDE_DURATION = 8000; // 8 seconds per slide
-const FADE_DELAY = 500; // delay between fade-in items
-
-let currentSlide = 0;
-
-function showSlide(n) {
-  document.querySelectorAll('.slide').forEach(s => s.classList.remove('active'));
-  const slide = document.getElementById(`slide-${n + 1}`);
-  if (slide) {
-    slide.classList.add('active');
-    // Animate fade items
-    const items = slide.querySelectorAll('.fade-item');
-    items.forEach((item, i) => {
-      setTimeout(() => item.classList.add('visible'), FADE_DELAY * (i + 1));
-    });
-  }
-  document.getElementById('progress').style.width = `${((n + 1) / TOTAL_SLIDES) * 100}%`;
-  document.getElementById('slide-number').textContent = `${n + 1} / ${TOTAL_SLIDES}`;
-}
-
-function nextSlide() {
-  currentSlide++;
-  if (currentSlide >= TOTAL_SLIDES) return;
-  showSlide(currentSlide);
-  if (currentSlide < TOTAL_SLIDES - 1) {
-    setTimeout(nextSlide, SLIDE_DURATION);
-  }
-}
-
-// Start
-showSlide(0);
-setTimeout(nextSlide, SLIDE_DURATION);
+const T=8,D=8000,F=500;let c=0;
+function show(n){document.querySelectorAll('.slide').forEach(s=>s.classList.remove('active'));const s=document.getElementById(`slide-${n+1}`);if(s){s.classList.add('active');s.querySelectorAll('.fade-item').forEach((e,i)=>setTimeout(()=>e.classList.add('visible'),F*(i+1)));}document.getElementById('progress').style.width=`${((n+1)/T)*100}%`;document.getElementById('slide-number').textContent=`${n+1} / ${T}`;}
+function next(){c++;if(c>=T)return;show(c);if(c<T-1)setTimeout(next,D);}
+show(0);setTimeout(next,D);
 </script>
 </body>
 </html>
