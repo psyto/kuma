@@ -32,6 +32,14 @@ export const STRATEGY_CONFIG = {
   minAnnualizedFundingBps: 500, // 5% minimum
   exitFundingBps: -50, // -0.5% exit
 
+  // === AMM IMBALANCE SIGNALS (v3 — Drift-native) ===
+  // Three revenue sources beyond simple funding:
+  // 1. OI imbalance → positions ahead of funding changes
+  // 2. Mark/Oracle premium → convergence trades
+  // 3. Funding rate → direct collection
+  minSignalStrength: 20, // Minimum composite signal (0-100) to enter
+  useImbalanceSignals: true, // Use multi-signal entry (funding + premium + OI)
+
   // === ORDER EXECUTION (v2 — addresses fee-disbursement critique) ===
   // Use LIMIT orders (maker) instead of MARKET orders (taker)
   // Drift maker fee: -0.002% (REBATE) vs taker: 0.035% (PAY)

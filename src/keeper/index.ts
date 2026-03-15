@@ -27,10 +27,17 @@ import {
   LeverageState,
 } from "./leverage-controller";
 import { computeHealthState, computeDrawdown } from "./health-monitor";
+import {
+  fetchMarketImbalances,
+  rankByImbalance,
+  getTradeDirection,
+  MarketImbalance,
+} from "./imbalance-detector";
 
 const activePositions: BasisPosition[] = [];
 let peakEquity = 0;
 let currentLeverage: LeverageState | undefined;
+let latestImbalances: MarketImbalance[] = [];
 
 async function initDriftClient(
   connection: Connection,
@@ -62,6 +69,31 @@ async function updateLeverage(): Promise<void> {
     );
   } catch (err) {
     console.error("Failed to update leverage:", err);
+  }
+}
+
+async function runImbalanceScan(): Promise<void> {
+  console.log("\n--- AMM Imbalance Scan ---");
+  try {
+    const allImbalances = await fetchMarketImbalances();
+    latestImbalances = rankByImbalance(allImbalances);
+
+    console.log(
+      `Scanned ${allImbalances.length} markets → ${latestImbalances.length} with tradeable signals`
+    );
+
+    latestImbalances.slice(0, 5).forEach((m, i) => {
+      const dir = getTradeDirection(m);
+      console.log(
+        `  ${i + 1}. ${m.market}: signal=${m.signal} (${m.signalStrength.toFixed(0)}%) | ` +
+          `premium=${m.premiumPct > 0 ? "+" : ""}${m.premiumPct.toFixed(4)}% | ` +
+          `OI imbalance=${m.oiImbalancePct > 0 ? "+" : ""}${m.oiImbalancePct.toFixed(1)}% | ` +
+          `funding=${m.annualizedFundingPct.toFixed(1)}% APY | ` +
+          `→ ${dir.direction.toUpperCase()} (${dir.reason})`
+      );
+    });
+  } catch (err) {
+    console.error("Imbalance scan error:", err);
   }
 }
 
@@ -218,20 +250,46 @@ async function runRebalance(driftClient: DriftClient): Promise<void> {
   console.log(`Lending target: $${lendingTarget.toFixed(2)}`);
   console.log(`Basis targets: ${scaledTargets.length} markets`);
 
-  // 3. Open new positions
+  // 3. Open new positions with imbalance-directed entry
   const activeMarkets = new Set(activePositions.map((p) => p.marketIndex));
+  const imbalanceMap = new Map(latestImbalances.map((m) => [m.marketIndex, m]));
 
   for (const target of scaledTargets) {
     if (activeMarkets.has(target.marketIndex)) continue;
-    if (target.sizeUsd < 10) continue; // Skip trivial positions
+    if (target.sizeUsd < 10) continue;
+
+    // Use imbalance signal for direction if available
+    let direction: "short" | "long" = "short"; // default: short (classic basis)
+    let entryReason = "funding positive → short";
+
+    if (STRATEGY_CONFIG.useImbalanceSignals) {
+      const imbalance = imbalanceMap.get(target.marketIndex);
+      if (imbalance) {
+        const trade = getTradeDirection(imbalance);
+        if (trade.direction === "none") {
+          console.log(
+            `  Skipping ${target.marketName}: ${trade.reason}`
+          );
+          continue;
+        }
+        direction = trade.direction;
+        entryReason = trade.reason;
+      }
+    }
 
     try {
-      await openBasisPosition(driftClient, target.marketIndex, target.sizeUsd);
+      console.log(`  Opening ${target.marketName}: ${entryReason}`);
+      await openBasisPosition(
+        driftClient,
+        target.marketIndex,
+        target.sizeUsd,
+        direction
+      );
 
       activePositions.push({
         marketIndex: target.marketIndex,
         marketName: target.marketName,
-        direction: "short",
+        direction,
         sizeUsd: target.sizeUsd,
         entryFundingRate: rateMap.get(target.marketIndex)?.rate24h ?? 0,
         entryTimestamp: Date.now(),
@@ -244,7 +302,8 @@ async function runRebalance(driftClient: DriftClient): Promise<void> {
 
 async function main(): Promise<void> {
   console.log("🐻 Kuma Keeper Starting...");
-  console.log("Strategy: Lending floor + Drift basis trade alpha");
+  console.log("Strategy: Drift AMM Imbalance Arbitrage + Lending Floor");
+  console.log("Signals: Funding rate + OI imbalance + Mark/Oracle premium");
   console.log("Risk controls: Dynamic leverage, cost gates, health monitoring\n");
 
   const connection = getConnection();
@@ -255,8 +314,9 @@ async function main(): Promise<void> {
   const driftClient = await initDriftClient(connection, managerKeypair);
   console.log("Drift client connected.\n");
 
-  // Initialize leverage from current vol
+  // Initialize
   await updateLeverage();
+  await runImbalanceScan();
   await runFundingScan(driftClient);
 
   let lastScan = Date.now();
@@ -281,13 +341,14 @@ async function main(): Promise<void> {
       lastEmergencyCheck = now;
     }
 
-    // Leverage update (every 15 min, same as funding scan)
+    // Leverage + imbalance update (every scan interval)
     if (now - lastLeverageUpdate >= STRATEGY_CONFIG.fundingScanIntervalMs) {
       await updateLeverage();
+      await runImbalanceScan();
       lastLeverageUpdate = now;
     }
 
-    // Funding scan (every 15 min)
+    // Funding scan
     if (now - lastScan >= STRATEGY_CONFIG.fundingScanIntervalMs) {
       try {
         await runFundingScan(driftClient);
