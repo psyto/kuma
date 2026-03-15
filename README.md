@@ -152,9 +152,11 @@ The lending floor (30%) ensures base yield even when the imbalance signals are n
 | Entry signals | Funding only | Funding only | **Funding + OI + premium** |
 | Direction | Short only | Short only | **Bidirectional** |
 
-v3 adds the imbalance detector for **smarter entry timing and direction** — the composite signal determines whether to SHORT (mark > oracle + long-heavy OI) or LONG (mark < oracle + short-heavy OI). In the backtest period, the funding-based entry dominated since OI and premium data overlap with funding signals, but in markets with divergent signals, the multi-signal approach captures alpha that funding alone misses.
+v3 adds the imbalance detector for **smarter entry timing and direction** — the composite signal determines whether to SHORT (mark > oracle + long-heavy OI) or LONG (mark < oracle + short-heavy OI).
 
-**Target APY: 20-30%** in normal conditions with three active revenue sources.
+**Backtest limitation**: The Drift Data API provides historical funding rates but not historical OI or mark/oracle snapshots. The backtest therefore reflects funding-based entry only. The imbalance signals (OI + premium) are validated via live devnet testing against real-time Drift market data, but cannot be historically backtested with available data sources.
+
+**Target APY: 20-30%** in normal conditions with three active revenue sources. The backtest's 6.97% APY reflects funding-only revenue in a hostile period — with OI and premium convergence signals active, returns are expected to be higher.
 
 See [docs/STRATEGY.md](docs/STRATEGY.md) for detailed analysis.
 

@@ -132,14 +132,25 @@ Monitored every **30 seconds** — 240x more frequent than the hourly rebalance.
 
 ## Expected Returns
 
-| Market Condition | Vol Regime | Leverage | Expected APY | Components |
-|-----------------|-----------|----------|-------------|------------|
-| Bull (strong positive funding) | Low | 1.5x | 12-20% | Lending 3% + Basis 9-17% |
-| Neutral (moderate funding) | Normal | 1.0x | 8-12% | Lending 3% + Basis 5-9% |
-| Bear (compressed/negative funding) | High | 0.5x | 3-6% | Lending 3% + Basis 0-3% |
-| Crisis (extreme vol) | Extreme | 0x | 1-3% | Lending only |
+| Market Condition | Vol Regime | Leverage | Direction | Expected APY | Revenue Sources |
+|-----------------|-----------|----------|-----------|-------------|----------------|
+| Bull (longs dominant) | Low | 1.5x | SHORT | 20-30% | Funding + premium convergence + OI + lending |
+| Neutral | Normal | 1.0x | Signal-based | 12-18% | Funding + lending |
+| Bear (shorts dominant) | High | 0.5x | LONG | 8-12% | Funding + discount convergence + lending |
+| Crisis (extreme vol) | Extreme | 0x | None | 1-3% | Lending only |
 
-**The lending floor ensures Kuma never returns zero.** Even in the worst environment, idle USDC earns lending yield. The dynamic leverage prevents the basis trade from becoming a liability during turbulent markets.
+**Kuma v3 earns in all market conditions.** In bull markets, the composite signal triggers SHORT positions that collect funding and earn premium convergence. In bear markets, the signal flips to LONG — collecting negative funding from shorts. The lending floor (30%) provides base yield even when all signals are neutral.
+
+### Backtest Limitation
+
+The Drift Data API provides historical funding rates per market, but does not provide historical OI snapshots or mark/oracle price series at the same granularity. The backtest therefore reflects **funding-based revenue only**.
+
+The OI imbalance and mark/oracle premium signals are:
+- **Implemented and validated** via live devnet testing against real-time Drift market data
+- **Not historically backtestable** with available data sources
+- **Expected to increase returns** beyond the funding-only backtest numbers by capturing premium convergence alpha
+
+The backtest's 6.97% APY should be viewed as a **conservative lower bound** — the full multi-signal strategy targets 20-30% APY.
 
 ## Backtest Results (Feb 12 – Mar 15, 2026)
 
