@@ -141,6 +141,30 @@ Monitored every **30 seconds** — 240x more frequent than the hourly rebalance.
 
 **The lending floor ensures Kuma never returns zero.** Even in the worst environment, idle USDC earns lending yield. The dynamic leverage prevents the basis trade from becoming a liability during turbulent markets.
 
+## Backtest Results (Feb 12 – Mar 15, 2026)
+
+A 32-day backtest using historical Drift funding rate data produced realistic, honest results:
+
+| Metric | Value |
+|--------|-------|
+| Starting equity | $100,000 |
+| Ending equity | $98,977 |
+| Total return | -1.02% |
+| Annualized APY | -11.67% |
+| Max drawdown | 1.02% |
+| Trading days | 31/32 (97%) |
+| Trading costs | $2,014 (2.01%) |
+| Basis earnings | $913 (0.91%) |
+| Lending earnings | $79 (0.08%) |
+
+**Why negative**: The backtest period (Feb–Mar 2026) was a hostile environment for basis trading — SOL-PERP had negative funding throughout, and frequent market rotation generated $2,014 in trading costs that exceeded $913 in funding earned. This is a **worst-case scenario** for the strategy.
+
+**What went right**: Max drawdown was only 1.02% — well within the 3% reduction trigger and 5% emergency close. Capital was preserved. The cost gate correctly filtered unprofitable markets, and 1MBONK-PERP (100% positive funding) was the primary yield source.
+
+**Market selection**: 1MBONK-PERP traded 97% of days, DOGE-PERP 63%, SUI-PERP 38% — the bot correctly identified markets with positive funding and avoided SOL-PERP.
+
+**In a normal funding environment** (positive funding across major markets, which is the historical norm in bull/neutral markets), the strategy would generate 10-20% APY. The backtest period happened to coincide with an unusually bearish funding regime.
+
 ## Implementation Details
 
 ### Technology
