@@ -42,12 +42,14 @@ async function main() {
   console.log("🐻 Kuma Vault — Historical Backtest (Realistic)\n");
   console.log("Strategy: 30% lending floor + 70% basis trade (top 3 markets)");
   console.log("Leverage: dynamic by vol regime (0.5x-2x)");
-  console.log("Costs: 0.035% taker fee + 0.05% slippage per trade\n");
+  const orderType = STRATEGY_CONFIG.useLimitOrders ? "LIMIT (maker)" : "MARKET (taker)";
+  const feeBps = STRATEGY_CONFIG.useLimitOrders ? STRATEGY_CONFIG.driftMakerFeeBps : STRATEGY_CONFIG.driftTakerFeeBps;
+  console.log(`Orders: ${orderType} | Fee: ${feeBps} bps | Slippage: ${STRATEGY_CONFIG.estimatedSlippageBps} bps\n`);
 
-  const markets = [
-    "SOL-PERP", "BTC-PERP", "ETH-PERP",
-    "DOGE-PERP", "SUI-PERP", "1MBONK-PERP",
-  ];
+  // Use allowed markets from config, filtered by excludeMarkets
+  const markets = STRATEGY_CONFIG.allowedMarkets.filter(
+    (m) => !STRATEGY_CONFIG.excludeMarkets.includes(m)
+  );
 
   // Fetch all market data
   console.log("Fetching funding rates...");
@@ -70,9 +72,11 @@ async function main() {
   const MAX_PER_MARKET = STRATEGY_CONFIG.maxPositionPctPerMarket / 100; // 0.40
   const LENDING_APY = 3; // Conservative 3% lending APY
   const LENDING_DAILY = LENDING_APY / 365; // ~0.0082% per day
-  const TAKER_FEE = STRATEGY_CONFIG.driftTakerFeeBps / 10000; // 0.00035
-  const SLIPPAGE = STRATEGY_CONFIG.estimatedSlippageBps / 10000; // 0.0005
-  const ROUND_TRIP_COST = 2 * (TAKER_FEE + SLIPPAGE); // 0.0017 = 0.17%
+  // Use maker or taker fees based on config
+  const PER_TRADE_FEE = STRATEGY_CONFIG.useLimitOrders
+    ? Math.max(0, (STRATEGY_CONFIG.estimatedSlippageBps + STRATEGY_CONFIG.driftMakerFeeBps) / 10000)
+    : (STRATEGY_CONFIG.estimatedSlippageBps + STRATEGY_CONFIG.driftTakerFeeBps) / 10000;
+  const ROUND_TRIP_COST = 2 * PER_TRADE_FEE;
   const MIN_FUNDING_BPS = STRATEGY_CONFIG.minAnnualizedFundingBps; // 500 bps = 5%
   const EXIT_RATE = STRATEGY_CONFIG.exitFundingBps / 10000; // -0.0005
 
