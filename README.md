@@ -41,34 +41,6 @@ Key advantages:
 
 ![Kuma Architecture](docs/architecture.svg)
 
-```
-┌──────────────────────────────────────────┐
-│  Voltr Vault (on-chain)                  │
-│  Deposits, withdrawals, LP shares        │
-│  Fee collection, NAV tracking            │
-├──────────────────────────────────────────┤
-│  Drift Adaptor (on-chain)                │
-│  Bridges vault ↔ Drift protocol          │
-├──────────────────────────────────────────┤
-│  Kuma Keeper Bot (off-chain)             │
-│  ├── Emergency Monitor (30s loop)        │
-│  │   ├── Health ratio check              │
-│  │   └── Drawdown check                  │
-│  ├── Leverage Controller (15 min)        │
-│  │   ├── Fetch SOL realized vol          │
-│  │   └── Scale leverage by regime        │
-│  ├── Funding Scanner (15 min)            │
-│  │   ├── Fetch rates for all markets     │
-│  │   └── Cost gate: filter unprofitable  │
-│  ├── Position Manager (1 hour)           │
-│  │   ├── Compute target allocations      │
-│  │   ├── Open/close basis positions      │
-│  │   └── Apply leverage scaling          │
-│  └── Rebalancer (1 hour)                 │
-│       └── Rotate between top markets     │
-└──────────────────────────────────────────┘
-```
-
 ### Components
 
 | Module | File | Purpose |
@@ -104,15 +76,17 @@ Every market rotation is evaluated against trading costs before entry:
 Net profit = (annualized_funding × hold_period / 8760) - 2 × (taker_fee + slippage)
 ```
 
-A position is only opened if `net_profit > 0` over the minimum 24-hour holding period. This prevents **fee churn** — where frequent rotation eats more in trading costs than the harvested funding.
+A position is only opened if `net_profit > 0` over the minimum holding period. This prevents **fee churn** — where frequent rotation eats more in trading costs than the harvested funding.
 
 | Cost Component | Value |
 |----------------|-------|
 | Drift taker fee | 0.035% per trade |
 | Estimated slippage | 0.05% per trade |
-| Round-trip cost | 0.17% (2 × fees + slippage) |
-| Break-even at 10% APY | ~15 hours |
-| Break-even at 5% APY | ~30 hours |
+| Round-trip cost | 0.17% (2 × (fee + slippage)) |
+| Break-even at 62% APY | ~24 hours |
+| Break-even at 8.9% APY | ~7 days |
+
+The cost gate is conservative by design — only high-conviction, high-yield markets pass the filter.
 
 ## Risk Management
 
@@ -123,7 +97,7 @@ A position is only opened if `net_profit > 0` over the minimum 24-hour holding p
 | Leverage by regime | 2x/1.5x/1x/0.5x/0x | Scales inversely with realized volatility |
 | Max per market | 40% | Concentrated in high-quality markets only |
 | Max simultaneous markets | 3 | Top 3 only — avoids illiquid altcoins |
-| Min funding to enter | 5% APY + cost gate | Must exceed round-trip fees over 24h hold |
+| Min funding to enter | 5% APY + cost gate | Must exceed round-trip fees over hold period |
 | Exit threshold | -0.5% funding | Tighter exit — early response to reversals |
 | Health ratio warning | 1.15 | Start reducing positions |
 | Health ratio critical | 1.08 | Emergency close all |
@@ -142,6 +116,23 @@ A position is only opened if `net_profit > 0` over the minimum 24-hour holding p
 | Drift protocol / smart contract risk | Uses battle-tested Voltr vault infrastructure and Drift adaptor |
 | Correlated market crash | All crypto moves together — drawdown limits (3%/5%) force position closure before catastrophic loss |
 
+## Backtest Results
+
+32-day backtest (Feb 12 – Mar 15, 2026) using historical Drift funding rate data:
+
+| Metric | Value |
+|--------|-------|
+| Total return | **-1.02%** |
+| Max drawdown | **1.02%** (within 3% limit) |
+| Trading days | 31/32 (97%) |
+| Best market | 1MBONK-PERP (100% positive funding) |
+| SOL-PERP | Correctly avoided (negative funding) |
+| Trading costs | $2,014 (exceeded $913 funding earned) |
+
+The backtest period was a **hostile environment** for basis trading — SOL-PERP had negative funding throughout. Capital was preserved; risk controls worked as designed. In normal funding conditions (positive funding across major markets), the strategy targets 10-20% APY.
+
+See [docs/STRATEGY.md](docs/STRATEGY.md) for detailed backtest analysis.
+
 ## Fees
 
 | Fee | Amount |
@@ -152,15 +143,35 @@ A position is only opened if `net_profit > 0` over the minimum 24-hour holding p
 | Withdrawal fee | 0.1% |
 | Withdrawal period | 24 hours |
 
-## Demo & Dashboard
+## Testing
 
-- **Pitch video**: `demo/kuma-demo.mp4` — 66-second presentation covering strategy, architecture, risk controls, and backtest results
-- **Live dashboard**: Open `demo/dashboard.html` in any browser — fetches real Drift funding rates and displays regime, cost gate status, and keeper log. No server required.
-- **Voiceover script**: See `demo/` directory
+**24 unit tests** covering all strategy modules:
 
 ```bash
-# Preview the dashboard
+npm test
+```
+
+Tests validate:
+- **Cost calculator** — Round-trip cost computation, break-even analysis, cost gate logic
+- **Leverage controller** — Regime classification, leverage scaling, boundary conditions
+- **Funding scanner** — Market filtering, ranking, negative funding exclusion
+
+**Devnet integration tests** validate end-to-end against live Drift:
+
+```bash
+npm run test:devnet      # Basic connection + funding scan
+node dist/scripts/test-devnet-trading.js  # Full trading flow
+```
+
+## Demo & Dashboard
+
+- **Pitch video**: `demo/kuma-demo.mp4` — 80-second presentation (8 slides × 10s) covering strategy, architecture, risk controls, and backtest results
+- **Live dashboard**: Open `demo/dashboard.html` in any browser — fetches real Drift funding rates and displays regime, cost gate status, and keeper log. No server required.
+
+```bash
+# Preview
 open demo/dashboard.html
+open demo/kuma-demo.mp4
 ```
 
 ## Setup
@@ -178,7 +189,7 @@ git clone https://github.com/psyto/kuma.git
 cd kuma
 npm install
 cp .env.example .env
-# Edit .env with your keypair paths and RPC URL
+# Edit .env with your RPC URL and keypair paths
 ```
 
 ### Deploy Vault
@@ -197,22 +208,6 @@ npm run manager:init-strategy
 npm run keeper
 ```
 
-### Development
-
-```bash
-# Build TypeScript
-npm run build
-
-# Run unit tests (24 tests)
-npm test
-
-# Run devnet integration test
-npm run test:devnet
-
-# Watch mode for keeper development
-npm run keeper:dev
-```
-
 ## Tech Stack
 
 - **On-chain**: [Voltr Vault](https://docs.ranger.finance) + [Drift Protocol v2](https://docs.drift.trade)
@@ -226,7 +221,7 @@ Built for the [Ranger Build-A-Bear Hackathon](https://ranger.finance/build-a-bea
 
 - **Track**: Main + Drift Side Track
 - **Base asset**: USDC
-- **Target APY**: 10-20% (lending floor + basis alpha)
+- **Target APY**: 10-20% (normal funding conditions)
 - **Lock period**: 3-month rolling
 
 ## License
