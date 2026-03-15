@@ -11,7 +11,7 @@
     "manager:init-strategy": "node --loader ts-node/esm src/scripts/manager-init-strategy.ts",
     "keeper": "node --loader ts-node/esm src/keeper/index.ts",
     "keeper:dev": "node --watch --loader ts-node/esm src/keeper/index.ts",
-    "test": "npm run build && node dist/tests/cost-calculator.test.js && node dist/tests/leverage-controller.test.js && node dist/tests/funding-scanner.test.js"
+    "test": "npm run build && node dist/tests/cost-calculator.test.js && node dist/tests/leverage-controller.test.js && node dist/tests/funding-scanner.test.js && node dist/tests/imbalance-detector.test.js"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.30.1",

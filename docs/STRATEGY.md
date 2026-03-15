@@ -2,9 +2,11 @@
 
 ## Thesis
 
-Perpetual futures funding rates on Solana are structurally positive. Leveraged long demand from retail and systematic traders creates persistent yield for short positions. Kuma captures this yield systematically while maintaining a lending floor that provides base yield even when funding compresses.
+Drift's hybrid AMM architecture creates three structural inefficiencies that mean-revert: OI imbalance, mark/oracle premium, and funding rate skew. Kuma captures all three simultaneously using a weighted composite signal that determines both entry direction and position sizing.
 
-**Core insight**: The basis trade is well-understood, but most implementations use fixed leverage, ignore execution costs, and react too slowly to regime changes. Kuma differentiates through **dynamic leverage scaling**, **cost-aware market selection**, and **30-second health monitoring** — treating risk management as the primary product, not an afterthought.
+**Core insight**: Most basis trade vaults use a single signal (funding rate) and only trade one direction (short). Kuma uses **three Drift-native signals** to determine the **optimal direction** (SHORT in bull, LONG in bear) and captures **premium convergence alpha** that funding-only strategies miss entirely.
+
+**Revenue sources**: Funding payments + mark/oracle premium convergence + OI rebalancing + lending floor. Four sources active across all market conditions.
 
 ## How It Works
 
@@ -13,60 +15,75 @@ Perpetual futures funding rates on Solana are structurally positive. Leveraged l
 ```
 Total Vault Capital
 ├── 30% → Lending Floor (Drift Earn — USDC spot lending)
-│         Provides ~1-5% APY base yield regardless of funding environment
-│         Acts as buffer during bear markets
+│         Provides ~1-5% APY base yield regardless of market conditions
+│         Acts as buffer during extreme vol
 │
-└── 70% → Basis Trade Pool
-          ├── Funding Scanner (every 15 min)
-          │   ├── Fetches rates for all Drift perp markets
-          │   ├── Filters: positive funding in ≥2 of 3 timeframes (24h, 7d, 30d)
-          │   └── Ranks by weighted score: 40% × 24h + 35% × 7d + 25% × 30d
+└── 70% → Imbalance Arbitrage Pool
+          ├── Imbalance Detector (every 30 min)
+          │   ├── Reads OI imbalance (long vs short open interest)
+          │   ├── Reads Mark/Oracle premium (mark price vs oracle deviation)
+          │   ├── Reads Funding rate (24h average)
+          │   └── Composite signal: 50% funding + 30% premium + 20% OI
           │
-          ├── Cost Gate
-          │   ├── Computes: (funding × hold_period) - 2 × (fee + slippage)
-          │   └── Rejects markets where round-trip costs exceed expected funding
+          ├── Signal Scoring
+          │   ├── strong_short: composite > 0.6 (bullish imbalance)
+          │   ├── moderate_short: composite 0.2-0.6
+          │   ├── neutral: -0.2 to 0.2 (conflicting signals → skip)
+          │   ├── moderate_long: composite -0.6 to -0.2
+          │   └── strong_long: composite < -0.6 (bearish imbalance)
           │
-          ├── Leverage Controller (every 15 min)
-          │   ├── Computes realized vol from SOL-PERP candles (Parkinson estimator)
-          │   └── Scales leverage: 2x in low vol → 0x in extreme vol
+          ├── Cost Gate (maker orders)
+          │   ├── Maker fee: -0.002% rebate (not 0.035% taker fee)
+          │   ├── Round-trip cost: 1.6 bps (not 17 bps)
+          │   └── 7-day min hold, max 2 rotations/week
           │
-          ├── Allocation Engine
-          │   ├── Selects top 3 cost-viable markets
-          │   ├── Weights allocation proportional to annualized funding
-          │   └── Caps any single market at 40% of total equity
+          ├── Leverage Controller
+          │   ├── Parkinson vol from SOL-PERP candles
+          │   └── 2x in low vol → 0x in extreme vol
           │
-          └── Position Manager
-              ├── Opens SHORT perps via Drift SDK (scaled by dynamic leverage)
-              ├── Monitors funding rate and health ratio continuously
-              └── Exits when funding < -0.5% or health ratio < 1.15
+          └── Position Manager (bidirectional)
+              ├── SHORT when signal is short (mark > oracle + long-heavy OI)
+              ├── LONG when signal is long (mark < oracle + short-heavy OI)
+              ├── Flip direction when signals change
+              └── 30-second health monitoring
 ```
 
 ### Entry Criteria
 
-A market is eligible for a basis position when ALL of the following are met:
-1. Annualized funding rate ≥ 5% (500 bps)
-2. Funding is positive in at least 2 of 3 timeframes (24h, 7d, 30d)
-3. **Cost gate passes**: Expected funding over 24h hold > round-trip trading costs (0.17%)
+A market is eligible for a position when ALL of the following are met:
+1. **Composite signal strength ≥ 20%** (not neutral — clear directional conviction)
+2. Market is on the allowed whitelist (SOL/BTC/ETH/DOGE/SUI/AVAX) and not excluded
+3. **Cost gate passes**: Expected |funding| over 7-day hold > round-trip maker costs (1.6 bps)
 4. Current vol regime allows leverage > 0 (not extreme)
 5. Portfolio health ratio > 1.15 after the new position
+
+### Direction Logic
+
+```
+IF funding > 0 AND mark > oracle AND long-heavy OI → SHORT (collect funding + premium convergence)
+IF funding < 0 AND mark < oracle AND short-heavy OI → LONG (collect funding + discount convergence)
+IF signals conflict → SKIP (composite near zero = no conviction)
+```
 
 ### Exit Criteria
 
 A position is closed when ANY of the following occur:
-1. 24h funding rate drops below -0.5% (annualized) — tighter than typical basis vaults
-2. Portfolio drawdown exceeds 3% (reduce) or 5% (close all)
-3. Health ratio drops below 1.15 (reduce largest position) or 1.08 (emergency close all)
-4. Vol regime transitions to extreme (0x leverage = all positions closed)
-5. A cost-viable higher-yielding market displaces this market from top 3
+1. Composite signal flips direction → close and re-enter opposite side
+2. Signal strength drops below 20% (conviction lost)
+3. Portfolio drawdown exceeds 3% (reduce) or 5% (close all)
+4. Health ratio drops below 1.15 (reduce) or 1.08 (emergency close all)
+5. Vol regime transitions to extreme (0x leverage = all positions closed)
+6. Position held > 7 days and a stronger market becomes available (max 2 rotations/week)
 
 ### Rebalancing
 
-Every 1 hour, the keeper:
-1. Checks health ratio and drawdown (emergency path if critical)
+Every 4 hours, the keeper:
+1. Checks health ratio and drawdown (emergency path if critical — every 30s)
 2. Updates realized vol and dynamic leverage target
-3. Fetches current funding rates and applies cost gate
-4. Closes positions in markets that fail the cost gate or turned negative
-5. Opens new positions in markets that entered top 3 (scaled by leverage)
+3. Fetches OI, mark/oracle, and funding data → computes composite signals
+4. Determines entry direction per market (SHORT or LONG)
+5. Flips positions where direction has changed
+6. Opens new positions in top 3 by signal strength (scaled by leverage)
 
 ## Risk Management
 
