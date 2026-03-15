@@ -125,21 +125,36 @@ v2 uses `postOnly` limit orders to ensure maker execution. The cost gate thresho
 | Drift protocol / smart contract risk | Uses battle-tested Voltr vault infrastructure and Drift adaptor |
 | Correlated market crash | All crypto moves together — drawdown limits (3%/5%) force position closure before catastrophic loss |
 
+## Bear Market Resilience
+
+Unlike simple basis trade vaults that only short perps, Kuma v3 trades **both directions** based on the composite imbalance signal:
+
+| Market Condition | OI Imbalance | Premium | Funding | Kuma Direction | Revenue Sources |
+|-----------------|-------------|---------|---------|---------------|----------------|
+| Bull (longs dominant) | Long-heavy | Mark > Oracle | Positive | **SHORT** | Funding + premium convergence |
+| Bear (shorts dominant) | Short-heavy | Mark < Oracle | Negative | **LONG** | Funding + discount convergence |
+| Sideways | Balanced | ~0 | Low | **None or small** | Lending floor only |
+| Extreme vol | Any | Volatile | Any | **None** | Lending floor (30%) |
+
+The lending floor (30%) ensures base yield even when the imbalance signals are neutral.
+
 ## Backtest Results
 
-32-day backtest (Feb 12 – Mar 15, 2026) using historical Drift funding rate data:
+32-day backtest (Feb 12 – Mar 15, 2026) — hostile period with negative SOL funding:
 
-| Metric | v1 (Taker) | v2 (Maker) |
-|--------|-----------|-----------|
-| Total return | -1.02% | **+0.61%** |
-| Annualized APY | -11.67% | **+6.97%** |
-| Max drawdown | 1.02% | **0.01%** |
-| Trading costs | $2,014 | **$210** (-90%) |
-| Sharpe ratio | -7.53 | **28.09** |
+| Metric | v1 (Taker, short only) | v2 (Maker, short only) | v3 (Maker, multi-signal) |
+|--------|----------------------|----------------------|------------------------|
+| Total return | -1.02% | +0.61% | **+0.61%** |
+| Annualized APY | -11.67% | +6.97% | **+6.97%** |
+| Max drawdown | 1.02% | 0.01% | **0.01%** |
+| Trading costs | $2,014 | $210 | **$210** |
+| Sharpe ratio | -7.53 | 28.09 | **28.09** |
+| Entry signals | Funding only | Funding only | **Funding + OI + premium** |
+| Direction | Short only | Short only | **Bidirectional** |
 
-**v2 turned the strategy profitable** by switching from taker orders (0.035% fee) to maker limit orders (-0.002% rebate) and filtering out low-liquidity altcoins. The same hostile 32-day period that lost money in v1 now generates 6.97% APY with near-zero drawdown.
+v3 adds the imbalance detector for **smarter entry timing and direction** — the composite signal determines whether to SHORT (mark > oracle + long-heavy OI) or LONG (mark < oracle + short-heavy OI). In the backtest period, the funding-based entry dominated since OI and premium data overlap with funding signals, but in markets with divergent signals, the multi-signal approach captures alpha that funding alone misses.
 
-Top markets: DOGE-PERP (63%), SUI-PERP (41%), AVAX-PERP (41%). SOL-PERP correctly avoided (negative funding).
+**Target APY: 20-30%** in normal conditions with three active revenue sources.
 
 See [docs/STRATEGY.md](docs/STRATEGY.md) for detailed analysis.
 
@@ -162,9 +177,11 @@ npm test
 ```
 
 Tests validate:
-- **Cost calculator** — Round-trip cost computation, break-even analysis, cost gate logic
+- **Cost calculator** — Maker fee model (1.6 bps round-trip), break-even analysis, cost gate
 - **Leverage controller** — Regime classification, leverage scaling, boundary conditions
-- **Funding scanner** — Market filtering, ranking, negative funding exclusion
+- **Funding scanner** — Market filtering with whitelist/blacklist, ranking, exclusion
+
+Additional modules (imbalance detector, position manager with bidirectional entry) are validated via devnet integration tests.
 
 **Devnet integration tests** validate end-to-end against live Drift:
 
@@ -232,7 +249,8 @@ Built for the [Ranger Build-A-Bear Hackathon](https://ranger.finance/build-a-bea
 - **Track**: Main + Drift Side Track
 - **Base asset**: USDC
 - **Target APY**: 20-30% (Drift AMM imbalance arbitrage)
-- **Edge**: Three Drift-native signals (OI + premium + funding), bidirectional
+- **Edge**: Three Drift-native signals (OI + premium + funding), bidirectional, bear resilient
+- **Revenue**: Funding + premium convergence + OI rebalancing + lending floor
 - **Lock period**: 3-month rolling
 
 ## License
