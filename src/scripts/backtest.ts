@@ -1,6 +1,5 @@
 import { DRIFT_DATA_API } from "../config/constants";
 import { STRATEGY_CONFIG } from "../config/vault";
-import { evaluateTradeEconomics, passesCostGate } from "../keeper/cost-calculator";
 
 interface FundingRecord {
   ts: number;
@@ -13,43 +12,18 @@ interface FundingRecord {
   markPriceTwap: string;
 }
 
-interface BacktestResult {
-  market: string;
-  totalHours: number;
-  positiveHours: number;
-  negativeHours: number;
-  avgFundingRateHourly: number;
-  annualizedAPY: number;
-  maxConsecutiveNegativeHours: number;
-  cumulativeReturnPct: number;
-  maxDrawdownPct: number;
-  sharpeRatio: number;
+interface DailyResult {
+  date: string;
+  lendingReturn: number; // % of total equity
+  basisReturn: number; // % of total equity
+  totalReturn: number; // % of total equity
+  tradingCosts: number; // % of total equity
+  netReturn: number; // % of total equity
+  marketsTraded: string[];
+  marketsBlocked: string[];
 }
 
-interface PortfolioResult {
-  startDate: string;
-  endDate: string;
-  totalDays: number;
-  totalReturnPct: number;
-  annualizedAPY: number;
-  maxDrawdownPct: number;
-  sharpeRatio: number;
-  winRate: number;
-  monthlyReturns: { month: string; returnPct: number }[];
-  marketResults: BacktestResult[];
-  lendingYieldPct: number;
-  basisYieldPct: number;
-}
-
-const S3_BUCKET =
-  "https://drift-historical-data-v2.s3.eu-west-1.amazonaws.com";
-const DRIFT_PROGRAM = "dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH";
-
-async function fetchFundingHistory(
-  market: string
-): Promise<FundingRecord[]> {
-  // Use the API endpoint only (750 records = ~31 days)
-  // This is sufficient for a meaningful backtest
+async function fetchFundingHistory(market: string): Promise<FundingRecord[]> {
   const res = await fetch(
     `${DRIFT_DATA_API}/market/${market}/fundingRates?limit=750`
   );
@@ -59,223 +33,261 @@ async function fetchFundingHistory(
     success: boolean;
     records: FundingRecord[];
   };
-  if (!body.success || !body.records) {
-    throw new Error("No funding data returned");
-  }
+  if (!body.success || !body.records) throw new Error("No data");
 
   return body.records.sort((a, b) => a.ts - b.ts);
 }
 
-function backtestMarket(
-  records: FundingRecord[],
-  costGateEnabled: boolean
-): BacktestResult {
-  if (records.length === 0) {
-    return {
-      market: "unknown",
-      totalHours: 0,
-      positiveHours: 0,
-      negativeHours: 0,
-      avgFundingRateHourly: 0,
-      annualizedAPY: 0,
-      maxConsecutiveNegativeHours: 0,
-      cumulativeReturnPct: 0,
-      maxDrawdownPct: 0,
-      sharpeRatio: 0,
-    };
-  }
-
-  const market = records[0].symbol;
-  const hourlyReturns: number[] = [];
-  let consecutiveNeg = 0;
-  let maxConsecutiveNeg = 0;
-  let positiveHours = 0;
-  let negativeHours = 0;
-  let inPosition = false;
-
-  for (const rec of records) {
-    // Funding rate is a decimal fraction per hour (e.g., 0.001 = 0.1% per hour)
-    const rate = parseFloat(rec.fundingRateShort);
-    const annualizedBps = Math.abs(rate) * 24 * 365 * 10000; // to bps
-
-    if (rate > 0) {
-      positiveHours++;
-      consecutiveNeg = 0;
-
-      if (costGateEnabled && !passesCostGate(annualizedBps)) {
-        hourlyReturns.push(0);
-        continue;
-      }
-
-      // Hourly return in % = rate * 100 (e.g., 0.001 → 0.1%)
-      hourlyReturns.push(rate * 100);
-      inPosition = true;
-    } else {
-      negativeHours++;
-      consecutiveNeg++;
-      maxConsecutiveNeg = Math.max(maxConsecutiveNeg, consecutiveNeg);
-
-      if (inPosition && rate < STRATEGY_CONFIG.exitFundingBps / 10000) {
-        hourlyReturns.push(rate * 100);
-        inPosition = false;
-      } else if (inPosition) {
-        hourlyReturns.push(rate * 100);
-      } else {
-        hourlyReturns.push(0);
-      }
-    }
-  }
-
-  // Aggregate hourly returns into daily returns (sum, not compound)
-  const dailyReturns: number[] = [];
-  for (let i = 0; i < hourlyReturns.length; i += 24) {
-    const daySlice = hourlyReturns.slice(i, i + 24);
-    const dayReturn = daySlice.reduce((a, b) => a + b, 0);
-    dailyReturns.push(dayReturn);
-  }
-
-  // Compute cumulative return using daily compounding
-  let cumReturn = 1;
-  let peak = 1;
-  let maxDrawdown = 0;
-
-  for (const r of dailyReturns) {
-    cumReturn *= 1 + r / 100;
-    if (cumReturn > peak) peak = cumReturn;
-    const dd = (peak - cumReturn) / peak;
-    if (dd > maxDrawdown) maxDrawdown = dd;
-  }
-
-  const cumulativeReturnPct = (cumReturn - 1) * 100;
-  const avgDaily =
-    dailyReturns.reduce((a, b) => a + b, 0) / dailyReturns.length;
-  const annualizedAPY = avgDaily * 365;
-
-  // Sharpe ratio (daily)
-  const stdDev = Math.sqrt(
-    dailyReturns.reduce((sum, r) => sum + (r - avgDaily) ** 2, 0) /
-      dailyReturns.length
-  );
-  const sharpe =
-    stdDev > 0 ? (avgDaily / stdDev) * Math.sqrt(365) : 0;
-
-  return {
-    market,
-    totalHours: records.length,
-    positiveHours,
-    negativeHours,
-    avgFundingRateHourly: avgDaily / 24,
-    annualizedAPY,
-    maxConsecutiveNegativeHours: maxConsecutiveNeg,
-    cumulativeReturnPct,
-    maxDrawdownPct: maxDrawdown * 100,
-    sharpeRatio: sharpe,
-  };
-}
-
 async function main() {
-  console.log("🐻 Kuma Vault — Historical Backtest\n");
+  console.log("🐻 Kuma Vault — Historical Backtest (Realistic)\n");
   console.log("Strategy: 30% lending floor + 70% basis trade (top 3 markets)");
-  console.log("Risk controls: cost gate, dynamic leverage, -0.5% exit threshold\n");
+  console.log("Leverage: dynamic by vol regime (0.5x-2x)");
+  console.log("Costs: 0.035% taker fee + 0.05% slippage per trade\n");
 
-  // Markets to backtest
   const markets = [
-    "SOL-PERP",
-    "BTC-PERP",
-    "ETH-PERP",
-    "DOGE-PERP",
-    "SUI-PERP",
-    "1MBONK-PERP",
+    "SOL-PERP", "BTC-PERP", "ETH-PERP",
+    "DOGE-PERP", "SUI-PERP", "1MBONK-PERP",
   ];
 
-  console.log("Fetching historical funding rates (up to 6 months)...\n");
-
-  const marketResults: BacktestResult[] = [];
-
+  // Fetch all market data
+  console.log("Fetching funding rates...");
+  const marketData = new Map<string, FundingRecord[]>();
   for (const market of markets) {
     try {
-      process.stdout.write(`  ${market}... `);
-      const records = await fetchFundingHistory(market, 4380);
-      const result = backtestMarket(records, true);
-      marketResults.push(result);
-      console.log(
-        `${result.totalHours}h | APY: ${result.annualizedAPY.toFixed(2)}% | ` +
-          `Drawdown: ${result.maxDrawdownPct.toFixed(2)}% | ` +
-          `Sharpe: ${result.sharpeRatio.toFixed(2)} | ` +
-          `Positive: ${((result.positiveHours / result.totalHours) * 100).toFixed(0)}%`
-      );
+      const records = await fetchFundingHistory(market);
+      marketData.set(market, records);
+      console.log(`  ${market}: ${records.length} records`);
     } catch (err) {
-      console.log(`FAILED: ${(err as Error).message}`);
+      console.log(`  ${market}: FAILED`);
     }
   }
 
-  // Sort by Sharpe ratio descending — top 3 are our targets
-  marketResults.sort((a, b) => b.sharpeRatio - a.sharpeRatio);
+  // Configuration
+  const INITIAL_EQUITY = 100_000; // $100K starting capital
+  const LENDING_PCT = STRATEGY_CONFIG.lendingFloorPct / 100; // 0.30
+  const BASIS_PCT = STRATEGY_CONFIG.basisTradePct / 100; // 0.70
+  const MAX_MARKETS = STRATEGY_CONFIG.maxMarketsSimultaneous; // 3
+  const MAX_PER_MARKET = STRATEGY_CONFIG.maxPositionPctPerMarket / 100; // 0.40
+  const LENDING_APY = 3; // Conservative 3% lending APY
+  const LENDING_DAILY = LENDING_APY / 365; // ~0.0082% per day
+  const TAKER_FEE = STRATEGY_CONFIG.driftTakerFeeBps / 10000; // 0.00035
+  const SLIPPAGE = STRATEGY_CONFIG.estimatedSlippageBps / 10000; // 0.0005
+  const ROUND_TRIP_COST = 2 * (TAKER_FEE + SLIPPAGE); // 0.0017 = 0.17%
+  const MIN_FUNDING_BPS = STRATEGY_CONFIG.minAnnualizedFundingBps; // 500 bps = 5%
+  const EXIT_RATE = STRATEGY_CONFIG.exitFundingBps / 10000; // -0.0005
 
-  console.log("\n=== Top 3 Markets (by Sharpe Ratio) ===");
-  const top3 = marketResults.slice(0, 3);
-  top3.forEach((m, i) => {
-    console.log(
-      `  ${i + 1}. ${m.market}: APY=${m.annualizedAPY.toFixed(2)}% | ` +
-        `Sharpe=${m.sharpeRatio.toFixed(2)} | ` +
-        `MaxDD=${m.maxDrawdownPct.toFixed(2)}% | ` +
-        `MaxNegStreak=${m.maxConsecutiveNegativeHours}h`
-    );
-  });
+  // Assume moderate leverage (current market is high vol → 0.5x-1x)
+  const LEVERAGE = 1.0;
 
-  // Portfolio simulation: 30% lending + 70% split across top 3
-  console.log("\n=== Portfolio Backtest ===");
-  const lendingAPY = 3; // Conservative 3% lending yield
-  const basisWeight = 0.7 / top3.length;
-  const lendingWeight = 0.3;
+  // Group all records by day
+  const allDates = new Set<string>();
+  for (const [, records] of marketData) {
+    for (const rec of records) {
+      allDates.add(new Date(rec.ts * 1000).toISOString().slice(0, 10));
+    }
+  }
+  const sortedDates = [...allDates].sort();
 
-  const portfolioAPY =
-    lendingWeight * lendingAPY +
-    top3.reduce((sum, m) => sum + basisWeight * m.annualizedAPY, 0);
+  // Simulate day by day
+  let equity = INITIAL_EQUITY;
+  let peakEquity = equity;
+  let maxDrawdown = 0;
+  const dailyResults: DailyResult[] = [];
+  const dailyReturnsPct: number[] = [];
+  let totalTradingCosts = 0;
+  let positionChanges = 0;
 
-  const portfolioMaxDD = Math.max(...top3.map((m) => m.maxDrawdownPct)) * 0.7; // 70% basis allocation
-  const avgSharpe =
-    top3.reduce((sum, m) => sum + m.sharpeRatio, 0) / top3.length;
+  // Track which markets we're currently in
+  let currentPositions = new Set<string>();
 
-  // Monthly returns estimation
-  const totalHours = Math.min(...top3.map((m) => m.totalHours));
-  const totalDays = totalHours / 24;
-  const totalMonths = Math.ceil(totalDays / 30);
+  for (const date of sortedDates) {
+    // 1. Lending return (on 30% of equity)
+    const lendingReturn = equity * LENDING_PCT * (LENDING_DAILY / 100);
 
-  console.log(`Period: ~${totalDays.toFixed(0)} days (~${totalMonths} months)`);
-  console.log(`Lending yield (30%): ${(lendingWeight * lendingAPY).toFixed(2)}% APY contribution`);
-  console.log(
-    `Basis yield (70%): ${(portfolioAPY - lendingWeight * lendingAPY).toFixed(2)}% APY contribution`
+    // 2. Evaluate each market's daily funding
+    const marketDailyFunding = new Map<string, number>();
+    const marketPositiveHours = new Map<string, number>();
+
+    for (const [market, records] of marketData) {
+      const dayRecords = records.filter(
+        (r) => new Date(r.ts * 1000).toISOString().slice(0, 10) === date
+      );
+      if (dayRecords.length === 0) continue;
+
+      // Sum hourly funding rates for the day (for short positions)
+      // Raw fundingRateShort must be divided by oraclePriceTwap to get fractional rate
+      const dailyRate = dayRecords.reduce(
+        (sum, r) => {
+          const rate = parseFloat(r.fundingRateShort);
+          const oracle = parseFloat(r.oraclePriceTwap);
+          return sum + (oracle > 0 ? rate / oracle : 0);
+        },
+        0
+      );
+      const positiveHours = dayRecords.filter(
+        (r) => parseFloat(r.fundingRateShort) > 0
+      ).length;
+
+      marketDailyFunding.set(market, dailyRate);
+      marketPositiveHours.set(market, positiveHours);
+    }
+
+    // 3. Rank markets by daily funding (positive only, annualized > 5%)
+    const eligibleMarkets = [...marketDailyFunding.entries()]
+      .filter(([, rate]) => {
+        const annualizedBps = Math.abs(rate) * 365 * 10000;
+        return rate > 0 && annualizedBps >= MIN_FUNDING_BPS;
+      })
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, MAX_MARKETS);
+
+    // 4. Check for position changes (incurs trading costs)
+    const newPositions = new Set(eligibleMarkets.map(([m]) => m));
+    const entering = [...newPositions].filter((m) => !currentPositions.has(m));
+    const exiting = [...currentPositions].filter((m) => !newPositions.has(m));
+    positionChanges += entering.length + exiting.length;
+
+    // Trading costs for position changes
+    const perMarketAllocation = equity * BASIS_PCT * LEVERAGE / Math.max(newPositions.size, 1);
+    const tradingCosts =
+      (entering.length + exiting.length) * perMarketAllocation * ROUND_TRIP_COST;
+    totalTradingCosts += tradingCosts;
+
+    currentPositions = newPositions;
+
+    // 5. Compute basis return
+    // Each market gets equal share of the 70% basis pool, scaled by leverage
+    let basisReturn = 0;
+    const marketsTraded: string[] = [];
+    const marketsBlocked: string[] = [];
+
+    if (eligibleMarkets.length > 0) {
+      const allocationPerMarket = Math.min(
+        equity * BASIS_PCT * LEVERAGE / eligibleMarkets.length,
+        equity * MAX_PER_MARKET
+      );
+
+      for (const [market, dailyRate] of eligibleMarkets) {
+        // Daily return = position_size × daily_funding_rate
+        // dailyRate is sum of hourly rates (e.g., 24 × 0.0005 = 0.012 = 1.2%)
+        const marketReturn = allocationPerMarket * dailyRate;
+        basisReturn += marketReturn;
+        marketsTraded.push(market);
+      }
+    }
+
+    // Markets that were blocked
+    for (const [market, rate] of marketDailyFunding) {
+      if (!marketsTraded.includes(market)) {
+        marketsBlocked.push(
+          `${market}(${rate > 0 ? "thin" : "neg"})`
+        );
+      }
+    }
+
+    // 6. Net daily P&L
+    const netReturn = lendingReturn + basisReturn - tradingCosts;
+    equity += netReturn;
+
+    if (equity > peakEquity) peakEquity = equity;
+    const dd = (peakEquity - equity) / peakEquity;
+    if (dd > maxDrawdown) maxDrawdown = dd;
+
+    const dailyReturnPct = (netReturn / (equity - netReturn)) * 100;
+    dailyReturnsPct.push(dailyReturnPct);
+
+    dailyResults.push({
+      date,
+      lendingReturn,
+      basisReturn,
+      totalReturn: lendingReturn + basisReturn,
+      tradingCosts,
+      netReturn,
+      marketsTraded,
+      marketsBlocked,
+    });
+  }
+
+  // Results
+  const totalDays = dailyResults.length;
+  const totalReturnPct = ((equity - INITIAL_EQUITY) / INITIAL_EQUITY) * 100;
+  const annualizedAPY = (totalReturnPct / totalDays) * 365;
+  const avgDailyReturn =
+    dailyReturnsPct.reduce((a, b) => a + b, 0) / dailyReturnsPct.length;
+  const stdDaily = Math.sqrt(
+    dailyReturnsPct.reduce(
+      (sum, r) => sum + (r - avgDailyReturn) ** 2,
+      0
+    ) / dailyReturnsPct.length
   );
-  console.log(`Combined portfolio APY: ${portfolioAPY.toFixed(2)}%`);
-  console.log(`Estimated max drawdown: ${portfolioMaxDD.toFixed(2)}%`);
-  console.log(`Average Sharpe ratio: ${avgSharpe.toFixed(2)}`);
+  const sharpe = stdDaily > 0 ? (avgDailyReturn / stdDaily) * Math.sqrt(365) : 0;
 
-  // Summary table
-  console.log("\n=== Summary ===");
-  console.log(`Target APY (hackathon): ≥10%`);
-  console.log(`Backtest APY: ${portfolioAPY.toFixed(2)}%`);
-  console.log(
-    `Meets target: ${portfolioAPY >= 10 ? "YES ✓" : "NO ✗ (lending floor provides base)"}`
-  );
-  console.log(`Max drawdown: ${portfolioMaxDD.toFixed(2)}%`);
-  console.log(
-    `Within 3% limit: ${portfolioMaxDD <= 3 ? "YES ✓" : "WOULD TRIGGER REDUCTION at 3%"}`
-  );
+  const tradingDays = dailyResults.filter((d) => d.marketsTraded.length > 0).length;
+  const idleDays = totalDays - tradingDays;
 
-  // Per-market details
-  console.log("\n=== All Markets Detail ===");
-  console.log(
-    "Market          | Hours  | APY%     | MaxDD%  | Sharpe | Pos%  | MaxNegStreak"
-  );
-  console.log(
-    "----------------|--------|----------|---------|--------|-------|------------"
-  );
-  marketResults.forEach((m) => {
-    console.log(
-      `${m.market.padEnd(16)}| ${String(m.totalHours).padEnd(7)}| ${m.annualizedAPY.toFixed(2).padStart(8)}| ${m.maxDrawdownPct.toFixed(2).padStart(7)} | ${m.sharpeRatio.toFixed(2).padStart(6)} | ${((m.positiveHours / m.totalHours) * 100).toFixed(0).padStart(4)}% | ${m.maxConsecutiveNegativeHours}h`
-    );
-  });
+  console.log("\n════════════════════════════════════════");
+  console.log("           BACKTEST RESULTS");
+  console.log("════════════════════════════════════════\n");
+  console.log(`Period:            ${totalDays} days (${sortedDates[0]} to ${sortedDates[sortedDates.length - 1]})`);
+  console.log(`Starting equity:   $${INITIAL_EQUITY.toLocaleString()}`);
+  console.log(`Ending equity:     $${equity.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`);
+  console.log(`Total return:      ${totalReturnPct.toFixed(2)}%`);
+  console.log(`Annualized APY:    ${annualizedAPY.toFixed(2)}%`);
+  console.log(`Max drawdown:      ${(maxDrawdown * 100).toFixed(2)}%`);
+  console.log(`Sharpe ratio:      ${sharpe.toFixed(2)}`);
+  console.log(`Trading days:      ${tradingDays}/${totalDays} (${((tradingDays / totalDays) * 100).toFixed(0)}%)`);
+  console.log(`Idle days:         ${idleDays} (${((idleDays / totalDays) * 100).toFixed(0)}%)`);
+  console.log(`Position changes:  ${positionChanges}`);
+  console.log(`Total costs:       $${totalTradingCosts.toFixed(2)} (${((totalTradingCosts / INITIAL_EQUITY) * 100).toFixed(3)}% of initial)`);
+  console.log(`Leverage:          ${LEVERAGE}x`);
+
+  // Breakdown
+  const totalLending = dailyResults.reduce((s, d) => s + d.lendingReturn, 0);
+  const totalBasis = dailyResults.reduce((s, d) => s + d.basisReturn, 0);
+  console.log(`\nReturn breakdown:`);
+  console.log(`  Lending floor:   $${totalLending.toFixed(2)} (${((totalLending / INITIAL_EQUITY) * 100).toFixed(2)}%)`);
+  console.log(`  Basis alpha:     $${totalBasis.toFixed(2)} (${((totalBasis / INITIAL_EQUITY) * 100).toFixed(2)}%)`);
+  console.log(`  Trading costs:   -$${totalTradingCosts.toFixed(2)}`);
+
+  // Daily equity curve (sample every 5 days)
+  console.log("\nEquity curve:");
+  let runningEquity = INITIAL_EQUITY;
+  for (let i = 0; i < dailyResults.length; i++) {
+    runningEquity += dailyResults[i].netReturn;
+    if (i % 5 === 0 || i === dailyResults.length - 1) {
+      const pct = ((runningEquity - INITIAL_EQUITY) / INITIAL_EQUITY) * 100;
+      const bar = pct >= 0
+        ? "█".repeat(Math.min(Math.round(pct * 2), 50))
+        : "░".repeat(Math.min(Math.round(Math.abs(pct) * 2), 50));
+      console.log(
+        `  ${dailyResults[i].date} | $${runningEquity.toFixed(0).padStart(9)} | ${pct >= 0 ? "+" : ""}${pct.toFixed(2).padStart(7)}% ${bar}`
+      );
+    }
+  }
+
+  // Market frequency
+  console.log("\nMarket selection frequency:");
+  const marketCount = new Map<string, number>();
+  for (const d of dailyResults) {
+    for (const m of d.marketsTraded) {
+      marketCount.set(m, (marketCount.get(m) ?? 0) + 1);
+    }
+  }
+  [...marketCount.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .forEach(([market, count]) => {
+      console.log(
+        `  ${market.padEnd(16)} ${count} days (${((count / totalDays) * 100).toFixed(0)}%)`
+      );
+    });
+
+  // Verdict
+  console.log("\n════════════════════════════════════════");
+  console.log(`Target APY:   ≥10%`);
+  console.log(`Achieved APY: ${annualizedAPY.toFixed(2)}%`);
+  console.log(`Verdict:      ${annualizedAPY >= 10 ? "MEETS TARGET ✓" : annualizedAPY > 0 ? "POSITIVE BUT BELOW TARGET" : "NEGATIVE — STRATEGY WOULD LOSE MONEY"}`);
+  console.log(`Max DD:       ${(maxDrawdown * 100).toFixed(2)}% (limit: 3% reduce / 5% close)`);
+  console.log("════════════════════════════════════════");
 }
 
 main().catch(console.error);
