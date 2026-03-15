@@ -3,16 +3,16 @@ const path = require("path");
 const { execSync } = require("child_process");
 
 const TOTAL_SLIDES = 8;
-const SLIDE_DURATION = 8; // seconds per slide
-const TOTAL_DURATION = TOTAL_SLIDES * SLIDE_DURATION + 2; // +2s buffer
+const SECONDS_PER_SLIDE = 10;
 const FPS = 30;
+const FRAMES_PER_SLIDE = SECONDS_PER_SLIDE * FPS; // 300 frames per slide
+const TOTAL_FRAMES = TOTAL_SLIDES * FRAMES_PER_SLIDE;
 const OUTPUT_DIR = path.join(__dirname, "frames");
 const OUTPUT_VIDEO = path.resolve(__dirname, "kuma-demo.mp4");
 
 async function main() {
   console.log("🐻 Recording Kuma demo video...\n");
 
-  // Clean/create frames directory
   execSync(`rm -rf "${OUTPUT_DIR}" && mkdir -p "${OUTPUT_DIR}"`);
 
   const browser = await puppeteer.launch({
@@ -26,31 +26,77 @@ async function main() {
     waitUntil: "domcontentloaded",
   });
 
-  // Capture frames
-  const totalFrames = TOTAL_DURATION * FPS;
-  const intervalMs = 1000 / FPS;
+  // Stop the auto-advance timer in the presentation
+  await page.evaluate(() => {
+    // Clear any existing timeouts
+    const highestId = setTimeout(() => {}, 0);
+    for (let i = 0; i < highestId; i++) clearTimeout(i);
+  });
 
-  console.log(`Capturing ${totalFrames} frames at ${FPS}fps...`);
+  console.log(`Recording ${TOTAL_SLIDES} slides × ${SECONDS_PER_SLIDE}s = ${TOTAL_SLIDES * SECONDS_PER_SLIDE}s total`);
+  console.log(`${TOTAL_FRAMES} frames at ${FPS}fps\n`);
 
-  for (let i = 0; i < totalFrames; i++) {
-    const frameNum = String(i).padStart(6, "0");
-    await page.screenshot({
-      path: path.join(OUTPUT_DIR, `frame_${frameNum}.png`),
-      type: "png",
-    });
+  let frameIndex = 0;
 
-    if (i % (FPS * 5) === 0) {
-      const sec = Math.floor(i / FPS);
-      console.log(`  ${sec}s / ${TOTAL_DURATION}s (${Math.floor((i / totalFrames) * 100)}%)`);
+  for (let slide = 0; slide < TOTAL_SLIDES; slide++) {
+    // Show this slide
+    await page.evaluate((n) => {
+      // Remove active from all slides
+      document.querySelectorAll('.slide').forEach(s => s.classList.remove('active'));
+      // Reset fade items on this slide
+      const sl = document.getElementById(`slide-${n + 1}`);
+      if (sl) {
+        sl.querySelectorAll('.fade-item').forEach(e => e.classList.remove('visible'));
+        sl.classList.add('active');
+      }
+      // Update progress
+      const total = document.querySelectorAll('.slide').length;
+      document.getElementById('progress').style.width = `${((n + 1) / total) * 100}%`;
+      document.getElementById('slide-number').textContent = `${n + 1} / ${total}`;
+    }, slide);
+
+    // Wait a beat for the slide transition
+    await new Promise(r => setTimeout(r, 200));
+
+    // Trigger fade-in items one by one over the first 3 seconds
+    const fadeItemCount = await page.evaluate((n) => {
+      const sl = document.getElementById(`slide-${n + 1}`);
+      return sl ? sl.querySelectorAll('.fade-item').length : 0;
+    }, slide);
+
+    const fadeInterval = fadeItemCount > 0 ? Math.min(500, 2000 / fadeItemCount) : 0;
+
+    let fadeTriggered = 0;
+
+    // Capture frames for this slide
+    for (let f = 0; f < FRAMES_PER_SLIDE; f++) {
+      // Trigger fade items at appropriate intervals
+      const elapsedMs = (f / FPS) * 1000;
+      while (fadeTriggered < fadeItemCount && elapsedMs > (fadeTriggered + 1) * fadeInterval) {
+        await page.evaluate((slideIdx, itemIdx) => {
+          const sl = document.getElementById(`slide-${slideIdx + 1}`);
+          if (sl) {
+            const items = sl.querySelectorAll('.fade-item');
+            if (items[itemIdx]) items[itemIdx].classList.add('visible');
+          }
+        }, slide, fadeTriggered);
+        fadeTriggered++;
+      }
+
+      const frameNum = String(frameIndex).padStart(6, "0");
+      await page.screenshot({
+        path: path.join(OUTPUT_DIR, `frame_${frameNum}.png`),
+        type: "png",
+      });
+      frameIndex++;
     }
 
-    await new Promise((r) => setTimeout(r, intervalMs));
+    console.log(`  Slide ${slide + 1}/${TOTAL_SLIDES} captured (${FRAMES_PER_SLIDE} frames)`);
   }
 
   await browser.close();
-  console.log(`\nFrames captured. Encoding video...`);
+  console.log(`\n${frameIndex} frames captured. Encoding video...`);
 
-  // Encode with ffmpeg
   execSync(
     `ffmpeg -y -framerate ${FPS} -i "${OUTPUT_DIR}/frame_%06d.png" ` +
       `-c:v libx264 -pix_fmt yuv420p -crf 18 -preset medium ` +
@@ -58,12 +104,11 @@ async function main() {
     { stdio: "inherit" }
   );
 
-  // Cleanup frames
   execSync(`rm -rf "${OUTPUT_DIR}"`);
 
+  const duration = TOTAL_SLIDES * SECONDS_PER_SLIDE;
   console.log(`\nDone! Video saved to: ${OUTPUT_VIDEO}`);
-  console.log(`Duration: ~${TOTAL_DURATION}s`);
-  console.log(`\nNext: Add voiceover using QuickTime or any video editor.`);
+  console.log(`Duration: ${duration}s (${TOTAL_SLIDES} slides × ${SECONDS_PER_SLIDE}s)`);
 }
 
 main().catch(console.error);
