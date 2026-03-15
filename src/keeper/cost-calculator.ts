@@ -1,33 +1,46 @@
 import { STRATEGY_CONFIG } from "../config/vault";
 
 export interface TradeEconomics {
-  expectedFundingBps: number; // Annualized funding rate in bps
+  expectedFundingBps: number;
   holdingPeriodHours: number;
   positionSizeUsd: number;
   profitable: boolean;
   netProfitBps: number;
   roundTripCostBps: number;
   breakEvenHours: number;
+  orderType: "maker" | "taker";
 }
 
 /**
  * Compute whether a basis trade is profitable after costs.
  *
- * Gate: (funding_apy × hold_period / 8760) - (2 × (fee + slippage)) > 0
+ * v2: Uses maker (limit) order fees when useLimitOrders is enabled.
+ * Maker rebate: -0.002% (we get paid) vs Taker: 0.035% (we pay)
  *
- * This prevents "fee churn" — where frequent rotation eats more in
- * trading costs than the harvested funding.
+ * With maker orders:
+ *   Round-trip cost = 2 × (slippage - |makerRebate|) = 2 × (1 - 0.2) = 1.6 bps
+ * With taker orders (fallback):
+ *   Round-trip cost = 2 × (slippage + takerFee) = 2 × (1 + 3.5) = 9 bps
+ *
+ * This dramatically lowers the break-even funding rate:
+ *   Maker 7-day hold: 1.6 × 8760 / 168 = 83 bps (0.83% APY)
+ *   Taker 7-day hold: 9 × 8760 / 168 = 469 bps (4.69% APY)
  */
 export function evaluateTradeEconomics(
   annualizedFundingBps: number,
   estimatedHoldHours: number = STRATEGY_CONFIG.minHoldingPeriodHours
 ): TradeEconomics {
-  const { driftTakerFeeBps, estimatedSlippageBps } = STRATEGY_CONFIG;
+  const { estimatedSlippageBps, useLimitOrders, driftMakerFeeBps, driftTakerFeeBps } =
+    STRATEGY_CONFIG;
 
-  // Round-trip cost: entry fee + exit fee + entry slippage + exit slippage
-  const roundTripCostBps = 2 * (driftTakerFeeBps + estimatedSlippageBps);
+  // Maker: slippage - |rebate| (rebate is negative = income)
+  // Taker: slippage + fee
+  const perTradeCostBps = useLimitOrders
+    ? Math.max(0, estimatedSlippageBps + driftMakerFeeBps) // maker rebate reduces cost
+    : estimatedSlippageBps + driftTakerFeeBps;
 
-  // Expected funding earned over hold period
+  const roundTripCostBps = 2 * perTradeCostBps;
+
   const hoursPerYear = 8760;
   const expectedFundingEarned =
     (annualizedFundingBps * estimatedHoldHours) / hoursPerYear;
@@ -35,7 +48,6 @@ export function evaluateTradeEconomics(
   const netProfitBps = expectedFundingEarned - roundTripCostBps;
   const profitable = netProfitBps > 0;
 
-  // Break-even: how many hours to hold before funding covers costs
   const breakEvenHours =
     annualizedFundingBps > 0
       ? (roundTripCostBps * hoursPerYear) / annualizedFundingBps
@@ -44,29 +56,28 @@ export function evaluateTradeEconomics(
   return {
     expectedFundingBps: annualizedFundingBps,
     holdingPeriodHours: estimatedHoldHours,
-    positionSizeUsd: 0, // Set by caller
+    positionSizeUsd: 0,
     profitable,
     netProfitBps,
     roundTripCostBps,
     breakEvenHours,
+    orderType: useLimitOrders ? "maker" : "taker",
   };
 }
 
-/**
- * Filter markets that pass the cost gate.
- * Only enter positions where expected funding exceeds round-trip costs.
- */
 export function passesCostGate(annualizedFundingBps: number): boolean {
   const economics = evaluateTradeEconomics(annualizedFundingBps);
   return economics.profitable;
 }
 
-/**
- * Compute the minimum annualized funding rate needed to break even
- * for a given holding period.
- */
 export function minProfitableFundingBps(holdHours: number): number {
-  const { driftTakerFeeBps, estimatedSlippageBps } = STRATEGY_CONFIG;
-  const roundTripCostBps = 2 * (driftTakerFeeBps + estimatedSlippageBps);
+  const { estimatedSlippageBps, useLimitOrders, driftMakerFeeBps, driftTakerFeeBps } =
+    STRATEGY_CONFIG;
+
+  const perTradeCostBps = useLimitOrders
+    ? Math.max(0, estimatedSlippageBps + driftMakerFeeBps)
+    : estimatedSlippageBps + driftTakerFeeBps;
+
+  const roundTripCostBps = 2 * perTradeCostBps;
   return (roundTripCostBps * 8760) / holdHours;
 }

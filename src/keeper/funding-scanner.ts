@@ -1,4 +1,5 @@
 import { DRIFT_DATA_API } from "../config/constants";
+import { STRATEGY_CONFIG } from "../config/vault";
 
 export interface FundingRateData {
   market: string;
@@ -59,8 +60,19 @@ export function rankMarketsByFunding(
 ): FundingRateData[] {
   const minPct = minAnnualizedBps / 100;
 
+  // Apply allowed/excluded market filters
+  const { allowedMarkets, excludeMarkets } = STRATEGY_CONFIG;
+
   return rates
     .filter((r) => {
+      // Market whitelist/blacklist
+      if (excludeMarkets.length > 0 && excludeMarkets.includes(r.market)) {
+        return false;
+      }
+      if (allowedMarkets.length > 0 && !allowedMarkets.includes(r.market)) {
+        return false;
+      }
+
       // Only consider markets with positive funding across multiple timeframes
       const positiveTimeframes = [r.rate24h, r.rate7d, r.rate30d].filter(
         (rate) => rate > 0

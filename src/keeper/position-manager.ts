@@ -73,17 +73,49 @@ export function computeTargetAllocations(
   return { lendingTarget, basisTargets };
 }
 
+/**
+ * Open a basis position using LIMIT orders (maker) when possible.
+ *
+ * Addresses the critique: "Repeating Taker executions ensures all alpha
+ * is absorbed by the exchange."
+ *
+ * Maker fees on Drift: -0.002% (REBATE) vs Taker: 0.035% (PAY)
+ * This transforms the fee structure from a 0.17% round-trip cost
+ * to a ~0.004% round-trip INCOME.
+ */
 export async function openBasisPosition(
   driftClient: DriftClient,
   marketIndex: number,
   sizeUsd: number
 ): Promise<string> {
-  // For basis trade: short perp (collect funding when positive)
-  // The "long spot" side is implicit — USDC in the vault IS the spot position
   const oraclePrice = driftClient.getOracleDataForPerpMarket(marketIndex);
   const price = oraclePrice.price.toNumber() / PRICE_PRECISION;
   const baseAmount = (sizeUsd / price) * BASE_PRECISION;
 
+  if (STRATEGY_CONFIG.useLimitOrders) {
+    // Place limit order slightly above oracle price (for short = willing to sell higher)
+    const spreadMultiplier = 1 + STRATEGY_CONFIG.limitOrderSpreadBps / 10000;
+    const limitPrice = Math.floor(price * spreadMultiplier * PRICE_PRECISION);
+
+    const orderParams = {
+      orderType: OrderType.LIMIT,
+      marketType: MarketType.PERP,
+      marketIndex,
+      direction: PositionDirection.SHORT,
+      baseAssetAmount: new BN(Math.floor(baseAmount)),
+      price: new BN(limitPrice),
+      reduceOnly: false,
+      postOnly: true, // Ensures maker — order rejected if it would take
+    };
+
+    const txSig = await driftClient.placePerpOrder(orderParams);
+    console.log(
+      `Opened SHORT LIMIT $${sizeUsd.toFixed(2)} on market ${marketIndex} @ $${(limitPrice / PRICE_PRECISION).toFixed(2)} (maker) | tx: ${txSig}`
+    );
+    return txSig;
+  }
+
+  // Fallback: market order (taker)
   const orderParams = {
     orderType: OrderType.MARKET,
     marketType: MarketType.PERP,
@@ -95,7 +127,7 @@ export async function openBasisPosition(
 
   const txSig = await driftClient.placePerpOrder(orderParams);
   console.log(
-    `Opened SHORT ${(sizeUsd).toFixed(2)} USD on market ${marketIndex} | tx: ${txSig}`
+    `Opened SHORT MARKET $${sizeUsd.toFixed(2)} on market ${marketIndex} (taker) | tx: ${txSig}`
   );
   return txSig;
 }
@@ -111,17 +143,42 @@ export async function closeBasisPosition(
     return "";
   }
 
+  if (STRATEGY_CONFIG.useLimitOrders) {
+    const oraclePrice = driftClient.getOracleDataForPerpMarket(marketIndex);
+    const price = oraclePrice.price.toNumber() / PRICE_PRECISION;
+    // For closing short (buying back), place limit slightly below oracle
+    const spreadMultiplier = 1 - STRATEGY_CONFIG.limitOrderSpreadBps / 10000;
+    const limitPrice = Math.floor(price * spreadMultiplier * PRICE_PRECISION);
+
+    const orderParams = {
+      orderType: OrderType.LIMIT,
+      marketType: MarketType.PERP,
+      marketIndex,
+      direction: PositionDirection.LONG,
+      baseAssetAmount: position.baseAssetAmount.abs(),
+      price: new BN(limitPrice),
+      reduceOnly: true,
+      postOnly: true,
+    };
+
+    const txSig = await driftClient.placePerpOrder(orderParams);
+    console.log(
+      `Close LIMIT on market ${marketIndex} @ $${(limitPrice / PRICE_PRECISION).toFixed(2)} (maker) | tx: ${txSig}`
+    );
+    return txSig;
+  }
+
   const orderParams = {
     orderType: OrderType.MARKET,
     marketType: MarketType.PERP,
     marketIndex,
-    direction: PositionDirection.LONG, // Close short by going long
+    direction: PositionDirection.LONG,
     baseAssetAmount: position.baseAssetAmount.abs(),
     reduceOnly: true,
   };
 
   const txSig = await driftClient.placePerpOrder(orderParams);
-  console.log(`Closed position on market ${marketIndex} | tx: ${txSig}`);
+  console.log(`Closed MARKET on market ${marketIndex} (taker) | tx: ${txSig}`);
   return txSig;
 }
 
