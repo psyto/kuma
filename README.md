@@ -39,6 +39,8 @@ Key advantages:
 
 ## Architecture
 
+![Kuma Architecture](docs/architecture.svg)
+
 ```
 ┌──────────────────────────────────────────┐
 │  Voltr Vault (on-chain)                  │

@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kuma Vault — Live Dashboard</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    background: #0a0a0f; color: #e0e0e0;
+    padding: 24px; min-height: 100vh;
+  }
+  .header {
+    display: flex; align-items: center; gap: 16px;
+    margin-bottom: 24px; border-bottom: 1px solid #222; padding-bottom: 16px;
+  }
+  .header h1 { font-size: 28px; }
+  .header .status { font-size: 14px; color: #40c057; }
+  .header .status.error { color: #e03131; }
+  .header .last-update { font-size: 12px; color: #666; margin-left: auto; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  .card {
+    background: #111118; border: 1px solid #222; border-radius: 8px; padding: 20px;
+  }
+  .card-label { font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 1px; }
+  .card-value { font-size: 32px; margin-top: 8px; }
+  .card-sub { font-size: 12px; color: #888; margin-top: 4px; }
+  .positive { color: #40c057; }
+  .negative { color: #e03131; }
+  .accent { color: #f0b040; }
+  .section { margin-bottom: 24px; }
+  .section h2 { font-size: 18px; color: #888; margin-bottom: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; color: #666; padding: 8px 12px; border-bottom: 2px solid #222; font-size: 12px; text-transform: uppercase; }
+  td { padding: 8px 12px; border-bottom: 1px solid #1a1a1a; }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px;
+    background: #1a2a1a; color: #40c057;
+  }
+  .badge.blocked { background: #2a1a1a; color: #e03131; }
+  .badge.warning { background: #2a2a1a; color: #f0b040; }
+  .chart-container {
+    background: #111118; border: 1px solid #222; border-radius: 8px; padding: 20px;
+    height: 200px; position: relative; overflow: hidden;
+  }
+  .chart-bar {
+    position: absolute; bottom: 40px; width: 8px; border-radius: 2px 2px 0 0;
+    transition: height 0.3s ease;
+  }
+  .chart-label { position: absolute; bottom: 8px; font-size: 10px; color: #444; text-align: center; }
+  .log-container {
+    background: #111118; border: 1px solid #222; border-radius: 8px; padding: 16px;
+    max-height: 200px; overflow-y: auto; font-size: 13px; line-height: 1.6;
+  }
+  .log-entry { border-bottom: 1px solid #1a1a1a; padding: 4px 0; }
+  .log-time { color: #444; }
+  .two-col { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+</style>
+</head>
+<body>
+<div class="header">
+  <span style="font-size: 32px;">🐻</span>
+  <h1>Kuma Vault</h1>
+  <span class="status" id="status">● Connecting...</span>
+  <span class="last-update" id="lastUpdate">—</span>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <div class="card-label">Total Equity</div>
+    <div class="card-value accent" id="equity">$—</div>
+    <div class="card-sub" id="equityChange">—</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Vol Regime</div>
+    <div class="card-value" id="regime">—</div>
+    <div class="card-sub" id="leverage">Leverage: —</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Health Ratio</div>
+    <div class="card-value positive" id="health">—</div>
+    <div class="card-sub" id="healthStatus">—</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Active Positions</div>
+    <div class="card-value" id="positions">—</div>
+    <div class="card-sub" id="positionDetail">—</div>
+  </div>
+</div>
+
+<div class="two-col">
+  <div class="section">
+    <h2>Funding Rate Scanner</h2>
+    <table>
+      <thead><tr><th>Market</th><th>24h Rate</th><th>APY</th><th>Cost Gate</th><th>Status</th></tr></thead>
+      <tbody id="fundingTable"></tbody>
+    </table>
+  </div>
+  <div class="section">
+    <h2>Leverage by Regime</h2>
+    <table>
+      <thead><tr><th>Regime</th><th>Vol</th><th>Leverage</th></tr></thead>
+      <tbody>
+        <tr><td>Very Low</td><td>&lt;20%</td><td>2.0x</td></tr>
+        <tr><td>Low</td><td>20-35%</td><td>1.5x</td></tr>
+        <tr><td>Normal</td><td>35-50%</td><td>1.0x</td></tr>
+        <tr><td style="color: #f0b040;">High</td><td>50-75%</td><td>0.5x</td></tr>
+        <tr><td style="color: #e03131;">Extreme</td><td>&gt;75%</td><td>0x</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Keeper Log</h2>
+  <div class="log-container" id="logContainer"></div>
+</div>
+
+<script>
+const DRIFT_API = 'https://data.api.drift.trade';
+
+async function fetchFundingRates() {
+  const res = await fetch(`${DRIFT_API}/stats/fundingRates`);
+  const body = await res.json();
+  return body.markets || [];
+}
+
+async function fetchVolatility() {
+  const res = await fetch(`${DRIFT_API}/market/SOL-PERP/candles/60?limit=168`);
+  const body = await res.json();
+  if (!body.records) return 0;
+  // Parkinson estimator
+  let sum = 0, count = 0;
+  for (const c of body.records) {
+    if (c.oracleHigh > 0 && c.oracleLow > 0 && c.oracleHigh >= c.oracleLow) {
+      const logHL = Math.log(c.oracleHigh / c.oracleLow);
+      sum += logHL * logHL;
+      count++;
+    }
+  }
+  if (count === 0) return 0;
+  return Math.sqrt(sum / (4 * Math.LN2 * count) * 365.25 * 24);
+}
+
+function classifyRegime(vol) {
+  if (vol < 0.20) return { regime: 'veryLow', leverage: 2.0 };
+  if (vol < 0.35) return { regime: 'low', leverage: 1.5 };
+  if (vol < 0.50) return { regime: 'normal', leverage: 1.0 };
+  if (vol < 0.75) return { regime: 'high', leverage: 0.5 };
+  return { regime: 'extreme', leverage: 0 };
+}
+
+function addLog(msg, type = 'info') {
+  const container = document.getElementById('logContainer');
+  const time = new Date().toLocaleTimeString();
+  const color = type === 'error' ? '#e03131' : type === 'warn' ? '#f0b040' : '#888';
+  container.innerHTML = `<div class="log-entry"><span class="log-time">${time}</span> <span style="color:${color}">${msg}</span></div>` + container.innerHTML;
+  if (container.children.length > 50) container.lastChild.remove();
+}
+
+async function update() {
+  try {
+    // Funding rates
+    const markets = await fetchFundingRates();
+    const tbody = document.getElementById('fundingTable');
+    const topMarkets = markets
+      .map(m => ({
+        symbol: m.symbol,
+        rate24h: parseFloat(m.fundingRates['24h']),
+        apy: parseFloat(m.fundingRates['24h']) * 24 * 365 * 100
+      }))
+      .sort((a, b) => b.rate24h - a.rate24h)
+      .slice(0, 8);
+
+    tbody.innerHTML = topMarkets.map(m => {
+      const roundTrip = 17; // bps
+      const earnedPer24h = Math.abs(m.apy) * 100 * 24 / 8760;
+      const passGate = earnedPer24h > roundTrip;
+      return `<tr>
+        <td>${m.symbol}</td>
+        <td class="${m.rate24h >= 0 ? 'positive' : 'negative'}">${(m.rate24h * 100).toFixed(4)}%</td>
+        <td class="${m.apy >= 0 ? 'positive' : 'negative'}">${m.apy.toFixed(1)}%</td>
+        <td><span class="badge ${passGate ? '' : 'blocked'}">${passGate ? 'PASS' : 'FAIL'}</span></td>
+        <td>${m.rate24h > 0 ? '<span class="badge">ELIGIBLE</span>' : '<span class="badge blocked">BLOCKED</span>'}</td>
+      </tr>`;
+    }).join('');
+
+    const eligible = topMarkets.filter(m => m.rate24h > 0).length;
+    document.getElementById('positions').textContent = Math.min(eligible, 3);
+    document.getElementById('positionDetail').textContent = `${eligible} eligible, top 3 selected`;
+
+    // Volatility & regime
+    const vol = await fetchVolatility();
+    const { regime, leverage } = classifyRegime(vol);
+    document.getElementById('regime').textContent = regime;
+    document.getElementById('regime').className = `card-value ${regime === 'extreme' ? 'negative' : regime === 'high' ? 'accent' : 'positive'}`;
+    document.getElementById('leverage').textContent = `Leverage: ${leverage}x | Vol: ${(vol * 100).toFixed(1)}%`;
+
+    // Mock equity and health (would be real with Drift connection)
+    document.getElementById('equity').textContent = '$100,000';
+    document.getElementById('equityChange').textContent = 'Simulated — connect to Drift for live data';
+    document.getElementById('health').textContent = '∞';
+    document.getElementById('healthStatus').textContent = 'No open positions (dashboard mode)';
+
+    document.getElementById('status').textContent = '● Live';
+    document.getElementById('status').className = 'status';
+    document.getElementById('lastUpdate').textContent = `Updated: ${new Date().toLocaleTimeString()}`;
+
+    addLog(`Scan complete: ${eligible} eligible markets, regime=${regime}, leverage=${leverage}x`);
+  } catch (err) {
+    document.getElementById('status').textContent = '● Error';
+    document.getElementById('status').className = 'status error';
+    addLog(`Error: ${err.message}`, 'error');
+  }
+}
+
+// Initial load
+update();
+addLog('Dashboard started — fetching live Drift data');
+// Refresh every 60 seconds
+setInterval(update, 60000);
+</script>
+</body>
+</html>
