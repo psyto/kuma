@@ -1,41 +1,49 @@
 # 🐻 Kuma Vault
 
-**Lending floor + Drift basis trade alpha on Solana.**
+**Drift AMM Imbalance Arbitrage + Lending Floor on Solana.**
 
-Kuma guards your yield. A USDC vault that combines a lending floor with Drift perpetual funding rate harvesting — delivering consistent alpha with downside protection through dynamic leverage control and 30-second health monitoring.
+Kuma guards your yield. A USDC vault that captures three Drift-native inefficiencies — OI imbalance, mark/oracle premium convergence, and funding rate harvesting — while maintaining a 30% lending floor for downside protection.
 
 ## Strategy
 
 Kuma splits vault capital between two yield sources:
 
 1. **Lending Floor (30%)** — Idle USDC earns base yield via Drift Earn (spot lending)
-2. **Basis Trade Alpha (70%)** — Short perpetual positions on Drift collect positive funding rates
+2. **Imbalance Arbitrage (70%)** — Captures three Drift-native inefficiencies:
+   - **OI Imbalance** → positions ahead of funding rate changes
+   - **Mark/Oracle Premium** → convergence trades (premium mean-reverts to zero)
+   - **Funding Rate** → direct collection (bidirectional — SHORT or LONG)
 
-The keeper bot scans Drift perp markets every 15 minutes, applies a cost gate to filter out unprofitable rotations, scales leverage dynamically with market volatility, and monitors health ratio every 30 seconds.
+The keeper bot scans Drift market data every 30 minutes, computes a weighted composite signal from all three sources, determines entry direction (SHORT when mark > oracle + long-heavy OI, LONG when mark < oracle + short-heavy OI), and scales position size by dynamic leverage.
 
 ### How It Works
 
 ```
 User deposits USDC → Voltr Vault
                       ├── 30% → Drift Earn (lending floor)
-                      └── 70% → Drift Perps (basis trades)
-                                 ├── Scan markets every 15 min
-                                 ├── Cost gate: funding > fees
-                                 ├── Enter top 3 cost-viable markets
+                      └── 70% → Drift Perps (imbalance arbitrage)
+                                 ├── Scan OI, premium, funding (30 min)
+                                 ├── Composite signal: 50% funding + 30% premium + 20% OI
+                                 ├── Direction: SHORT if mark > oracle, LONG if mark < oracle
+                                 ├── Cost gate: maker orders (rebate, not fee)
                                  ├── Dynamic leverage by vol regime
                                  ├── Health check every 30 seconds
-                                 └── Exit when funding < -0.5%
+                                 └── Low turnover: 7-day min hold, max 2 rotations/week
 ```
 
-### Why Basis Trading
+### Why AMM Imbalance Arbitrage
 
-When funding rates are positive (the typical state — longs pay shorts), short perp positions earn yield without directional exposure. The vault holds USDC as the "long spot" side, making it inherently delta-neutral on each position.
+Drift's hybrid AMM creates three structural inefficiencies that mean-revert:
+
+1. **OI Imbalance** — When longs dominate, funding rises. Positioning ahead captures the funding before it normalizes.
+2. **Mark/Oracle Premium** — When mark price deviates from oracle, it converges back. A short when mark > oracle profits from convergence AND earns funding.
+3. **Funding Rate** — Direct payment from the dominant side to the minority side. Bidirectional — SHORT when positive, LONG when negative.
 
 Key advantages:
-- **No impermanent loss** — Unlike DEX LP vaults
-- **No leverage looping** — Health ratio actively monitored, never at risk
-- **Cost-aware rotation** — Only enters markets where expected funding exceeds round-trip trading costs
-- **Volatility-adaptive** — Leverage scales inversely with market volatility
+- **Three revenue sources** — Not dependent on a single variable (funding alone)
+- **Drift-native** — Uses on-chain data only available on Drift (OI, mark price, AMM state)
+- **Bidirectional** — Earns in bull AND bear markets
+- **Maker orders** — Earns fee rebates (-0.002%) instead of paying taker fees (0.035%)
 
 ## Architecture
 
@@ -45,8 +53,9 @@ Key advantages:
 
 | Module | File | Purpose |
 |--------|------|---------|
+| Imbalance Detector | `src/keeper/imbalance-detector.ts` | Reads OI, mark/oracle spread, funding — computes composite signal and direction |
 | Funding Scanner | `src/keeper/funding-scanner.ts` | Fetches and ranks all Drift perp markets by funding rate |
-| Cost Calculator | `src/keeper/cost-calculator.ts` | Evaluates trade economics — filters markets where fees exceed funding |
+| Cost Calculator | `src/keeper/cost-calculator.ts` | Evaluates trade economics with maker fee model |
 | Leverage Controller | `src/keeper/leverage-controller.ts` | Dynamic leverage scaling based on realized volatility regime |
 | Health Monitor | `src/keeper/health-monitor.ts` | 30-second health ratio and drawdown checks |
 | Position Manager | `src/keeper/position-manager.ts` | Computes target allocations, opens/closes positions |
@@ -222,7 +231,8 @@ Built for the [Ranger Build-A-Bear Hackathon](https://ranger.finance/build-a-bea
 
 - **Track**: Main + Drift Side Track
 - **Base asset**: USDC
-- **Target APY**: 10-20% (normal funding conditions)
+- **Target APY**: 20-30% (Drift AMM imbalance arbitrage)
+- **Edge**: Three Drift-native signals (OI + premium + funding), bidirectional
 - **Lock period**: 3-month rolling
 
 ## License
