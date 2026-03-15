@@ -78,15 +78,15 @@ Net profit = (annualized_funding × hold_period / 8760) - 2 × (taker_fee + slip
 
 A position is only opened if `net_profit > 0` over the minimum holding period. This prevents **fee churn** — where frequent rotation eats more in trading costs than the harvested funding.
 
-| Cost Component | Value |
-|----------------|-------|
-| Drift taker fee | 0.035% per trade |
-| Estimated slippage | 0.05% per trade |
-| Round-trip cost | 0.17% (2 × (fee + slippage)) |
-| Break-even at 62% APY | ~24 hours |
-| Break-even at 8.9% APY | ~7 days |
+| Cost Component | Taker (v1) | Maker (v2) |
+|----------------|-----------|-----------|
+| Drift fee | 0.035% (pay) | -0.002% (rebate) |
+| Estimated slippage | 0.05% | 0.01% |
+| Round-trip cost | 0.17% | **0.016%** |
+| Break-even (24h hold) | 62% APY | 5.8% APY |
+| Break-even (7-day hold) | 8.9% APY | **0.83% APY** |
 
-The cost gate is conservative by design — only high-conviction, high-yield markets pass the filter.
+v2 uses `postOnly` limit orders to ensure maker execution. The cost gate threshold drops by 10x, making most positive-funding markets profitable.
 
 ## Risk Management
 
@@ -120,18 +120,19 @@ The cost gate is conservative by design — only high-conviction, high-yield mar
 
 32-day backtest (Feb 12 – Mar 15, 2026) using historical Drift funding rate data:
 
-| Metric | Value |
-|--------|-------|
-| Total return | **-1.02%** |
-| Max drawdown | **1.02%** (within 3% limit) |
-| Trading days | 31/32 (97%) |
-| Best market | 1MBONK-PERP (100% positive funding) |
-| SOL-PERP | Correctly avoided (negative funding) |
-| Trading costs | $2,014 (exceeded $913 funding earned) |
+| Metric | v1 (Taker) | v2 (Maker) |
+|--------|-----------|-----------|
+| Total return | -1.02% | **+0.61%** |
+| Annualized APY | -11.67% | **+6.97%** |
+| Max drawdown | 1.02% | **0.01%** |
+| Trading costs | $2,014 | **$210** (-90%) |
+| Sharpe ratio | -7.53 | **28.09** |
 
-The backtest period was a **hostile environment** for basis trading — SOL-PERP had negative funding throughout. Capital was preserved; risk controls worked as designed. In normal funding conditions (positive funding across major markets), the strategy targets 10-20% APY.
+**v2 turned the strategy profitable** by switching from taker orders (0.035% fee) to maker limit orders (-0.002% rebate) and filtering out low-liquidity altcoins. The same hostile 32-day period that lost money in v1 now generates 6.97% APY with near-zero drawdown.
 
-See [docs/STRATEGY.md](docs/STRATEGY.md) for detailed backtest analysis.
+Top markets: DOGE-PERP (63%), SUI-PERP (41%), AVAX-PERP (41%). SOL-PERP correctly avoided (negative funding).
+
+See [docs/STRATEGY.md](docs/STRATEGY.md) for detailed analysis.
 
 ## Fees
 

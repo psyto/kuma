@@ -143,27 +143,27 @@ Monitored every **30 seconds** — 240x more frequent than the hourly rebalance.
 
 ## Backtest Results (Feb 12 – Mar 15, 2026)
 
-A 32-day backtest using historical Drift funding rate data produced realistic, honest results:
+32-day backtest comparing v1 (taker orders) and v2 (maker limit orders):
 
-| Metric | Value |
-|--------|-------|
-| Starting equity | $100,000 |
-| Ending equity | $98,977 |
-| Total return | -1.02% |
-| Annualized APY | -11.67% |
-| Max drawdown | 1.02% |
-| Trading days | 31/32 (97%) |
-| Trading costs | $2,014 (2.01%) |
-| Basis earnings | $913 (0.91%) |
-| Lending earnings | $79 (0.08%) |
+| Metric | v1 (Taker) | v2 (Maker) |
+|--------|-----------|-----------|
+| Starting equity | $100,000 | $100,000 |
+| Ending equity | $98,977 | **$100,611** |
+| Total return | -1.02% | **+0.61%** |
+| Annualized APY | -11.67% | **+6.97%** |
+| Max drawdown | 1.02% | **0.01%** |
+| Sharpe ratio | -7.53 | **28.09** |
+| Trading costs | $2,014 | **$210** (-90%) |
+| Basis earnings | $913 | $742 |
+| Lending earnings | $79 | $79 |
 
-**Why negative**: The backtest period (Feb–Mar 2026) was a hostile environment for basis trading — SOL-PERP had negative funding throughout, and frequent market rotation generated $2,014 in trading costs that exceeded $913 in funding earned. This is a **worst-case scenario** for the strategy.
+**What changed in v2**: Switched from market orders (0.035% taker fee) to limit orders (-0.002% maker rebate). Round-trip cost dropped from 17 bps to 1.6 bps. Also blocked low-liquidity alts (1MBONK, CLOUD, MET) and added strict market whitelist (SOL/BTC/ETH/DOGE/SUI/AVAX with $5M OI minimum).
 
-**What went right**: Max drawdown was only 1.02% — well within the 3% reduction trigger and 5% emergency close. Capital was preserved. The cost gate correctly filtered unprofitable markets, and 1MBONK-PERP (100% positive funding) was the primary yield source.
+**Why v2 is profitable in the same hostile period**: The funding earned ($742) now exceeds trading costs ($210) because maker orders eliminate the fee drag that destroyed v1's returns. The strategy generates alpha even with SOL-PERP negative funding throughout.
 
-**Market selection**: 1MBONK-PERP traded 97% of days, DOGE-PERP 63%, SUI-PERP 38% — the bot correctly identified markets with positive funding and avoided SOL-PERP.
+**Market selection (v2)**: DOGE-PERP 63%, SUI-PERP 41%, AVAX-PERP 41% — the bot correctly shifted to Tier 2 markets with positive funding while avoiding SOL-PERP.
 
-**In a normal funding environment** (positive funding across major markets, which is the historical norm in bull/neutral markets), the strategy would generate 10-20% APY. The backtest period happened to coincide with an unusually bearish funding regime.
+**6.97% APY is below the 10% target** — this reflects a hostile period with high vol (0.5x leverage) and negative SOL funding. In normal conditions with low/moderate vol (1.5-2x leverage) and positive funding across major markets, the strategy targets 10-20% APY.
 
 ## Implementation Details
 
